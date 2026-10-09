@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#6b8e5a">
+<title>Little Bites — Baby Solids Tracker</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div id="app">
+  <!-- Header -->
+  <header class="appbar">
+    <div class="brand">🥣 Little Bites</div>
+    <div class="brand-sub">Baby Solids Tracker</div>
+    <button id="syncBtn" class="sync-chip" title="Cloud sync status">☁️ <span id="syncState">Local only</span></button>
+  </header>
+
+  <!-- Medical disclaimer -->
+  <div class="disclaimer" id="disclaimer">
+    <strong>⚠️ Not medical advice.</strong> This app uses commonly-cited general guidance (AAP-style).
+    Always confirm the food list, amounts, and especially the allergen schedule with <strong>your own pediatrician</strong>,
+    and watch your baby for any reaction. Call your doctor or emergency services for any signs of a serious reaction.
+    <button id="dismissDisc" class="link-btn">Got it</button>
+  </div>
+
+  <!-- Tabs -->
+  <nav class="tabs">
+    <button class="tab active" data-tab="plan">📅 Daily Plan</button>
+    <button class="tab" data-tab="foods">🍠 Foods</button>
+    <button class="tab" data-tab="allergens">🥚 Allergens</button>
+    <button class="tab" data-tab="log">📝 Log</button>
+    <button class="tab" data-tab="settings">⚙️ Setup</button>
+  </nav>
+
+  <main id="main"></main>
+
+  <footer class="foot">
+    <span id="babyNameFoot">Baby</span> · <span id="lastSaved">not saved yet</span>
+  </footer>
+</div>
+
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
