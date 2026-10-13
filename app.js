@@ -39,7 +39,7 @@ function dayLabel(weekN, dayN){ return dayDate(weekN,dayN).toLocaleDateString([]
 
 /* ---------------- migration from v1 ---------------- */
 function migrate(){
-  if(S.v === 2) { ensureWeek(1); return; }
+  if(S.v === 2) { ensureWeek(1); normalizeState(); return; }
   // v1 had S.intros (flat list). Fold them into Week 1.
   const old = S.intros || [];
   S.v = 2;
@@ -47,6 +47,7 @@ function migrate(){
   S.weeks = S.weeks || [];
   ensureWeek(1);
   old.forEach(it=>{
+    if(!it || !it.label) return;
     const wk = S.weeks[0];
     wk.foods = wk.foods || [];
     if(!wk.foods.includes(it.label)) wk.foods.push(it.label);
@@ -58,7 +59,39 @@ function migrate(){
   });
   delete S.intros; delete S.activeIntroId; delete S.activeDay;
   S.activeWeek = 1;
+  normalizeState();
   saveLocal();
+}
+/* Repair any week/intro so render() can never throw on old or cloud-loaded data. */
+function normalizeState(){
+  if(!Array.isArray(S.weeks)) S.weeks = [];
+  if(!S.startDateISO) S.startDateISO = todayISO();
+  if(!S.baby) S.baby = { name:"Baby", parents:["Parent 1","Parent 2"] };
+  if(!Array.isArray(S.baby.parents) || !S.baby.parents.length) S.baby.parents = ["Parent 1","Parent 2"];
+  if(!S.activeParent) S.activeParent = S.baby.parents[0];
+  if(!Array.isArray(S.pantry)) S.pantry = [];
+  if(!S.cloud) S.cloud = { url:"", lastSync:"" };
+  if(!S.settings) S.settings = { disclaimerDismissed:false };
+  S.weeks.forEach((w,i)=>{
+    if(!w || typeof w!=="object"){ S.weeks[i] = { n:i+1, foods:[], intros:{} }; return; }
+    w.n = i+1;
+    if(!Array.isArray(w.foods)) w.foods = [];
+    if(!w.intros || typeof w.intros!=="object") w.intros = {};
+    Object.keys(w.intros).forEach(name=>{
+      const it = w.intros[name];
+      if(!it || typeof it!=="object"){ delete w.intros[name]; return; }
+      if(!Array.isArray(it.days) || !it.days.length) it.days = makeIntroDays(name);
+      it.days.forEach(d=>{ if(!Array.isArray(d.items)) d.items = []; if(typeof d.day!=="number") d.day = 1; });
+      if(!it.checks || typeof it.checks!=="object") it.checks = {};
+      if(!it.reactions || typeof it.reactions!=="object") it.reactions = {};
+      it.emoji = it.emoji || "🍽️";
+      it.introduced = !!it.introduced;
+      // ensure every planned food has an intro entry
+    });
+    (w.foods||[]).forEach(nm=>{ if(!w.intros[nm]) w.intros[nm] = { emoji:"🍽️", isAllergen:false, startedISO:stampNow(), days:makeIntroDays(nm), checks:{}, reactions:{}, introduced:false }; });
+  });
+  if(!S.weeks.length) ensureWeek(1);
+  if(typeof S.activeWeek!=="number" || S.activeWeek<1 || S.activeWeek>S.weeks.length) S.activeWeek = 1;
 }
 function ensureWeek(n){
   S.weeks = S.weeks || [];
@@ -108,10 +141,16 @@ async function cloudPull(){
     if(json && json.data){
       const url = S.cloud.url;
       S = Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), json.data);
-      S.cloud.url = url; migrate(); saveLocal(); render();
+      S.cloud.url = url; migrate(); normalizeState(); saveLocal(); render();
       setSyncLabel("Synced ✓", true); toast("Loaded your saved data from Google Sheets.");
     } else { setSyncLabel("Connected", true); toast("Connected — no saved data in the Sheet yet."); }
-  }catch(e){ setSyncLabel("Load failed"); toast("Could not load from your Google Sheet. Check the link in Setup."); }
+  }catch(e){
+    setSyncLabel("Load issue");
+    console.error("cloudPull error:", e);
+    // Don't leave the app in a half-loaded state: repair and re-render so taps work.
+    try{ normalizeState(); render(); }catch(_){}
+    toast("Loaded, but had to repair the saved data. If anything looks off, tell us.");
+  }
 }
 
 /* ---------------- small helpers ---------------- */
@@ -763,8 +802,9 @@ function renderSettings(){
 /* ---------------- tabs & boot ---------------- */
 function setActiveTab(){ document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===currentTab)); }
 document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{ currentTab=t.dataset.tab; setActiveTab(); render(); });
-document.getElementById("dismissDisc").onclick=()=>{ S.settings.disclaimerDismissed=true; saveLocal(); render(); };
-document.getElementById("syncBtn").onclick=()=>{ currentTab="settings"; setActiveTab(); render(); };
+{ const d=document.getElementById("dismissDisc"); if(d) d.onclick=()=>{ S.settings.disclaimerDismissed=true; saveLocal(); render(); }; }
+{ const s=document.getElementById("syncBtn"); if(s) s.onclick=()=>{ currentTab="settings"; setActiveTab(); render(); }; }
 
+try{ normalizeState(); }catch(e){ console.error("normalize error:", e); }
 render();
 if(S.cloud.url){ cloudPull(); }
