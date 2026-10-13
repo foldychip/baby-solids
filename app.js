@@ -440,8 +440,13 @@ function renderPlan(){
   if(sugg.length){
     const ok = sugg.filter(s=>s.tier==="ok").slice(0,6);
     const care = sugg.filter(s=>s.tier==="care").slice(0,6);
-    html += `<div class="card" style="border-color:var(--green)"><h3>💡 Foods to try next in Week ${w.n}</h3>
-      <p class="muted">Because ${esc(S.baby.name)} has tolerated <b>${toleratedNames.length?toleratedNames.map(esc).join(", "):'some foods'}</b>, here's what allergy cross-reactivity research suggests is lower- or higher-risk to try next. Still introduce one new food at a time and confirm with your pediatrician.</p>`;
+    // Collapsible: default open only when the week is empty (helps you start);
+    // once foods are added it folds up to give the plan room. User's toggle is remembered.
+    const defOpen = !(w.foods||[]).length;
+    const isOpen = (S.settings.suggOpen===undefined) ? defOpen : !!S.settings.suggOpen;
+    html += `<details class="card" id="suggCard" style="border-color:var(--green)" ${isOpen?'open':''}>
+      <summary style="font-weight:700;font-size:15px;color:var(--green-d);cursor:pointer">💡 Foods to try next in Week ${w.n} <span class="muted" style="font-weight:500">(${ok.length+care.length} ideas — tap to ${isOpen?'hide':'show'})</span></summary>
+      <p class="muted" style="margin-top:8px">Because ${esc(S.baby.name)} has tolerated <b>${toleratedNames.length?toleratedNames.map(esc).join(", "):'some foods'}</b>, here's what allergy cross-reactivity research suggests is lower- or higher-risk to try next. Still introduce one new food at a time and confirm with your pediatrician.</p>`;
     const renderSugg = (s)=>`<div class="check-row"><div class="check-main">
         <div class="check-title">${s.emoji||"🍽️"} ${esc(s.name)}
           ${s.tier==="care"?'<span class="pill allergen">🟡 introduce carefully</span>':'<span class="pill safe">🟢 likely well tolerated</span>'}</div>
@@ -450,7 +455,7 @@ function renderPlan(){
     if(ok.length){ html += `<div class="check-meta" style="margin:6px 0;font-weight:600;color:var(--green-d)">🟢 Lower-risk — reassuring to try</div>` + ok.map(renderSugg).join(""); }
     if(care.length){ html += `<div class="check-meta" style="margin:10px 0 6px;font-weight:600;color:var(--red)">🟡 Higher cross-reactivity — introduce one at a time</div>` + care.map(renderSugg).join(""); }
     html += `<div class="note" style="margin-top:8px">🟢 = a <b>low cross-reactivity</b> family (tolerating one is reassuring for the others — e.g. tolerating peanut makes other legumes like soy, lentils, chickpeas low-risk). 🟡 = <b>high cross-reactivity</b> family — tolerating one does <b>not</b> mean the others are safe, so offer each on its own and watch. Rates from Francis et al., J Food Allergy 2020 (FARE).</div>`;
-    html += `</div>`;
+    html += `</details>`;
   }
 
   // per-food checklist blocks for the week (Day 1/2/3 inside the week)
@@ -519,6 +524,8 @@ function wirePlan(){
     if(t.hasAttribute("data-prep2")){ showPrep(t.dataset.prep2); return; }
     if(t.hasAttribute("data-edit")){ editEventTime(+t.dataset.ew, t.dataset.ef, t.dataset.edit, t.dataset.ek); return; }
   };
+  const sc = document.getElementById("suggCard");
+  if(sc) sc.ontoggle = ()=>{ S.settings.suggOpen = sc.open; saveLocal(); };
 }
 
 /* build try-next suggestions from tolerated groups, excluding already-planned */
