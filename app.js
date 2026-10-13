@@ -237,10 +237,18 @@ function introducedFoods(){
   S.weeks.forEach(w=> Object.entries(w.intros||{}).forEach(([name,it])=>{ if(it.introduced) out.push(name); }) );
   return out;
 }
-/* the groups the baby has successfully tried */
+/* names of foods the baby has at least STARTED (any check logged) */
+function startedFoods(){
+  const out = [];
+  S.weeks.forEach(w=> Object.entries(w.intros||{}).forEach(([name,it])=>{
+    if(it.introduced || Object.keys(it.checks||{}).length) out.push(name);
+  }) );
+  return [...new Set(out)];
+}
+/* the groups the baby has tried — introduced OR started (so suggestions appear sooner) */
 function triedGroups(){
   const groups = new Set();
-  introducedFoods().forEach(name=>{ const it=itemByName(name); if(it && it.group) groups.add(it.group); });
+  startedFoods().forEach(name=>{ const it=itemByName(name); if(it && it.group) groups.add(it.group); });
   return [...groups];
 }
 
@@ -267,6 +275,15 @@ function toggleCheck(weekN, name, day, itemId){
   else it.checks[key] = { at: stampNow(), by: S.activeParent };
   it.introduced = !!it.checks[`3:d3-done`];
   save(); render();
+}
+function markIntroduced(weekN, name){
+  const it = week(weekN).intros[name]; if(!it) return;
+  it.introduced = !it.introduced;
+  // keep the Day-3 "done" check in sync so the two views agree
+  if(it.introduced){ it.checks["3:d3-done"] = it.checks["3:d3-done"] || { at: stampNow(), by: S.activeParent }; }
+  else { delete it.checks["3:d3-done"]; }
+  save(); render();
+  toast(it.introduced ? `${name} marked introduced ✓` : `${name} no longer marked introduced`);
 }
 function logReaction(weekN, name, day){
   const it = week(weekN).intros[name]; if(!it) return;
@@ -327,12 +344,21 @@ function render(){
   if(S.cloud.url){ const el=document.getElementById("syncState"); if(el && el.textContent==="Local only") setSyncLabel("Connected", true); }
   if(!S.cloud.url) setSyncLabel("Local only", false);
 
-  if(currentTab==="plan") renderPlan();
-  else if(currentTab==="foods") renderFoods();
-  else if(currentTab==="pantry") renderPantry();
-  else if(currentTab==="allergens") renderAllergens();
-  else if(currentTab==="log") renderLog();
-  else if(currentTab==="settings") renderSettings();
+  try{
+    if(main) main.onclick = null;   // clear any delegated handler from a prior tab
+    if(currentTab==="plan") renderPlan();
+    else if(currentTab==="foods") renderFoods();
+    else if(currentTab==="pantry") renderPantry();
+    else if(currentTab==="allergens") renderAllergens();
+    else if(currentTab==="log") renderLog();
+    else if(currentTab==="settings") renderSettings();
+  }catch(err){
+    if(main) main.innerHTML = `<div class="card"><h3>⚠️ Something hiccuped on this screen</h3>
+      <p class="muted">The app caught an error so it didn't go blank. This helps us fix it:</p>
+      <pre style="background:#fdecec;color:#7a2f28;padding:10px;border-radius:8px;overflow-x:auto;font-size:12px;white-space:pre-wrap">${esc(String(err&&err.stack||err))}</pre>
+      <p class="muted">Your saved data is safe. Try another tab, or screenshot this and send it over.</p></div>`;
+    console.error("render error:", err);
+  }
 }
 
 /* ---------- PLAN (weekly calendar) ---------- */
@@ -369,9 +395,9 @@ function renderPlan(){
   }
   html += `</div>`;
 
-  // try-next suggestions based on what's been tolerated (cross-reactivity-informed)
+  // try-next suggestions based on what's been tried (cross-reactivity-informed)
   const sugg = buildSuggestions();
-  const toleratedNames = introducedFoods();
+  const toleratedNames = startedFoods();
   if(sugg.length){
     const ok = sugg.filter(s=>s.tier==="ok").slice(0,6);
     const care = sugg.filter(s=>s.tier==="care").slice(0,6);
@@ -399,7 +425,8 @@ function renderPlan(){
           <span class="muted" data-prep2="${esc(name)}" style="cursor:pointer">👆 tap the name for prep info${item?` · ${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}`:''}</span>
         </div>
         <button class="btn danger small" style="width:auto" data-rm="${esc(name)}">Remove</button>
-      </div>`;
+      </div>
+      <button class="btn ${it.introduced?'sec':''} small" style="margin-bottom:6px" data-intro="${esc(name)}">${it.introduced?'✓ Introduced (tap to undo)':'Mark introduced ✓'}</button>`;
     // 3 day watch
     it.days.forEach(d=>{
       const total=d.items.length, done=d.items.filter(x=>it.checks[`${d.day}:${x.id}`]).length;
@@ -436,16 +463,23 @@ function renderPlan(){
 
 function wirePlan(){
   const ps=document.getElementById("parentSel"); if(ps) ps.onchange=()=>{ S.activeParent=ps.value; saveLocal(); };
-  document.querySelectorAll("#weekSel [data-week]").forEach(c=>c.onclick=()=>{ S.activeWeek=+c.dataset.week; render(); });
-  const aw=document.getElementById("addWeek"); if(aw) aw.onclick=()=>{ ensureWeek(S.weeks.length+1); S.activeWeek=S.weeks.length; save(); render(); };
-  const af=document.getElementById("addFoodBtn"); if(af) af.onclick=()=>{ currentTab="foods"; setActiveTab(); render(); toast(`Pick foods — they add to Week ${S.activeWeek}`); };
-  document.querySelectorAll("[data-sugg]").forEach(b=>b.onclick=()=>{ const it=itemByName(b.dataset.sugg); addFoodToWeek(S.activeWeek,b.dataset.sugg,b.dataset.se,it?it.isAllergen:false); render(); });
-  document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{ if(confirm(`Remove ${b.dataset.rm} from Week ${S.activeWeek}?`)) removeFoodFromWeek(S.activeWeek,b.dataset.rm); });
-  document.querySelectorAll(".check-box").forEach(b=>b.onclick=()=>toggleCheck(+b.dataset.week,b.dataset.food,+b.dataset.day,b.dataset.item));
-  document.querySelectorAll("[data-react]").forEach(b=>b.onclick=()=>logReaction(S.activeWeek,b.dataset.react,+b.dataset.rday));
-  document.querySelectorAll("[data-prep]").forEach(b=>b.onclick=()=>showPrep(b.dataset.prep));
-  document.querySelectorAll("[data-prep2]").forEach(b=>b.onclick=()=>showPrep(b.dataset.prep2));
-  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editEventTime(+b.dataset.ew, b.dataset.ef, b.dataset.edit, b.dataset.ek));
+  // Event delegation: ONE listener handles every tappable element, so a handler
+  // can never silently fail to bind even if a later part of render hiccups.
+  main.onclick = (e)=>{
+    const t = e.target.closest("[data-week],#addWeek,#addFoodBtn,[data-sugg],[data-rm],[data-intro],.check-box,[data-react],[data-prep],[data-prep2],[data-edit]");
+    if(!t) return;
+    if(t.id==="addWeek"){ ensureWeek(S.weeks.length+1); S.activeWeek=S.weeks.length; save(); render(); return; }
+    if(t.id==="addFoodBtn"){ currentTab="foods"; setActiveTab(); render(); toast(`Pick foods — they add to Week ${S.activeWeek}`); return; }
+    if(t.matches("#weekSel [data-week]")){ S.activeWeek=+t.dataset.week; render(); return; }
+    if(t.hasAttribute("data-sugg")){ const it=itemByName(t.dataset.sugg); addFoodToWeek(S.activeWeek,t.dataset.sugg,t.dataset.se,it?it.isAllergen:false); render(); return; }
+    if(t.hasAttribute("data-rm")){ if(confirm(`Remove ${t.dataset.rm} from Week ${S.activeWeek}?`)) removeFoodFromWeek(S.activeWeek,t.dataset.rm); return; }
+    if(t.hasAttribute("data-intro")){ markIntroduced(S.activeWeek,t.dataset.intro); return; }
+    if(t.classList.contains("check-box")){ toggleCheck(+t.dataset.week,t.dataset.food,+t.dataset.day,t.dataset.item); return; }
+    if(t.hasAttribute("data-react")){ logReaction(S.activeWeek,t.dataset.react,+t.dataset.rday); return; }
+    if(t.hasAttribute("data-prep")){ showPrep(t.dataset.prep); return; }
+    if(t.hasAttribute("data-prep2")){ showPrep(t.dataset.prep2); return; }
+    if(t.hasAttribute("data-edit")){ editEventTime(+t.dataset.ew, t.dataset.ef, t.dataset.edit, t.dataset.ek); return; }
+  };
 }
 
 /* build try-next suggestions from tolerated groups, excluding already-planned */
