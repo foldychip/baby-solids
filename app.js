@@ -140,7 +140,6 @@ function closeModal(){ const m=document.getElementById("modalBg"); if(m) m.remov
 
 /* popup: how to prep a food (same info as Foods tab) */
 function showPrep(name){
-  const it = itemByName(name);
   if(!it){
     openModal(`<h3>🍽️ ${esc(name)}</h3><p class="muted">This is a custom food you added, so there's no stored prep guide. General tips: cook until very soft, cool to lukewarm, purée or mash smooth, start with 1–2 teaspoons, and watch for any reaction.</p>`, true);
     return;
@@ -155,6 +154,75 @@ function showPrep(name){
     <div class="food-grid">${rows}</div>
     <div class="note" style="margin-top:12px">Educational guidance — confirm amounts & allergen timing with your pediatrician.</div>
   `, true);
+}
+
+/* popup: full Google Sheets cloud-saving tutorial (walkthrough + copy-paste code) */
+const APPS_SCRIPT_CODE = `var SHEET_NAME = "Data";
+
+function getSheet_() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sh = ss.getSheetByName(SHEET_NAME);
+  if (!sh) {
+    sh = ss.insertSheet(SHEET_NAME);
+    sh.getRange(1, 1).setValue("littleBitesData");
+  }
+  return sh;
+}
+
+function doGet(e) {
+  try {
+    var sh = getSheet_();
+    var cell = sh.getRange(2, 1).getValue();
+    var data = cell ? JSON.parse(cell) : null;
+    return json_({ ok: true, data: data });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  }
+}
+
+function doPost(e) {
+  try {
+    var body = JSON.parse(e.postData.contents);
+    if (body.action === "save") {
+      var sh = getSheet_();
+      sh.getRange(2, 1).setValue(JSON.stringify(body.data));
+      sh.getRange(2, 2).setValue(new Date());
+      return json_({ ok: true });
+    }
+    return json_({ ok: false, error: "unknown action" });
+  } catch (err) {
+    return json_({ ok: false, error: String(err) });
+  }
+}
+
+function json_(obj) {
+  return ContentService
+    .createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}`;
+
+function showSetupTutorial(){
+  const codeHtml = esc(APPS_SCRIPT_CODE);
+  openModal(`
+    <h3>📖 Set up cloud saving (Google Sheets)</h3>
+    <p class="muted">Your app already saves on this phone. These one-time steps (~5 min, easiest on a computer) connect it to a Google Sheet so your plan syncs across both phones. You just need a free Google account.</p>
+    <ol class="steps">
+      <li><b>Create a spreadsheet.</b> Go to <code>sheets.google.com</code>, sign in, click <b>Blank spreadsheet</b>, name it e.g. "Baby Solids".</li>
+      <li><b>Open the script editor.</b> In the menu: <b>Extensions &rarr; Apps Script</b>. A code box opens.</li>
+      <li><b>Paste in the code.</b> Delete everything in the box, then paste the code below (use the Copy button).</li>
+      <li><b>Save &amp; deploy.</b> Click <b>Deploy &rarr; New deployment</b>. Next to "Select type" click the gear and choose <b>Web app</b>.</li>
+      <li><b>Set permissions.</b> <b>Execute as: Me</b> and <b>Who has access: Anyone</b>. Click <b>Deploy</b>.</li>
+      <li><b>Authorize.</b> Click <b>Authorize access</b>, pick your account. If you see "Google hasn't verified this app" (normal for your own script), click <b>Advanced &rarr; Go to (your project) &rarr; Allow</b>.</li>
+      <li><b>Copy the link.</b> It gives a <b>Web app URL</b> ending in <code>/exec</code>. Copy it.</li>
+      <li><b>Paste it here.</b> Close this tutorial, paste the link into the box above, tap <b>Connect</b>. The cloud chip should read <b>Synced &#10003;</b>.</li>
+      <li><b>Second phone.</b> Open this app there, Setup tab, paste the <b>same</b> link. Now you share one plan.</li>
+    </ol>
+    <div class="row" style="margin:4px 0 8px"><button class="btn small" id="copyCode">&#128203; Copy the code</button></div>
+    <pre style="background:#2d2a24;color:#eee;padding:12px;border-radius:10px;overflow-x:auto;font-size:12px;line-height:1.4;white-space:pre">${codeHtml}</pre>
+    <div class="note">The tips that matter most: Step 5 "Who has access: Anyone" (or the app can't reach it), and Step 6 (the "unverified" warning is expected). If sync later says "failed", re-check Step 5 under Deploy &rarr; Manage deployments.</div>
+  `, true);
+  const cb = document.getElementById("copyCode");
+  if(cb) cb.onclick = ()=>{ navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(()=>{ cb.textContent="\u2713 Copied!"; }).catch(()=>{ toast("Press and hold the code to copy."); }); };
 }
 
 /* all food names ever added to any week */
@@ -248,6 +316,10 @@ function editEventTime(weekN, name, kind, key){
 const main = document.getElementById("main");
 let currentTab = "plan";
 let foodFilterNutrient = "";   // nutrition filter on Foods tab
+let foodSearch = "";           // search box text
+let foodSort = "default";      // "default" | "az"
+let foodAgeBand = "";          // "" | 6m | 6-9m | 9-12m | 12m+
+let foodShowAllergens = true;  // include allergens in the Foods list
 
 function render(){
   const bf = document.getElementById("babyNameFoot"); if(bf) bf.textContent = S.baby.name || "Baby";
@@ -292,25 +364,27 @@ function renderPlan(){
     <div class="dayhead"><h3 style="margin:0">Week ${w.n} · ${weekRangeLabel(w.n)}</h3></div>
     <button class="btn sec small" id="addFoodBtn">➕ Add a food to this week</button>`;
   if(!(w.foods||[]).length){
-    html += `<p class="muted" style="margin-top:10px">No foods yet. Add from the <b>Foods</b> or <b>Allergens</b> tab, or tap the button above.</p>`;
+    const okCount = buildSuggestions().length;
+    html += `<p class="muted" style="margin-top:10px">No foods yet for this week.${okCount?' See <b>Foods to try next</b> below — suggestions based on what '+esc(S.baby.name)+' already tolerates.':' Add from the <b>Foods</b> or <b>Allergens</b> tab, or tap the button above.'}</p>`;
   }
   html += `</div>`;
 
   // try-next suggestions based on what's been tolerated (cross-reactivity-informed)
   const sugg = buildSuggestions();
+  const toleratedNames = introducedFoods();
   if(sugg.length){
-    const ok = sugg.filter(s=>s.tier==="ok").slice(0,5);
-    const care = sugg.filter(s=>s.tier==="care").slice(0,5);
-    html += `<div class="card"><h3>💡 Foods to try next</h3>
-      <p class="muted">Based on what ${esc(S.baby.name)} already tolerates, using allergy cross-reactivity research (how related two foods are). Still introduce one new food at a time and confirm with your pediatrician.</p>`;
+    const ok = sugg.filter(s=>s.tier==="ok").slice(0,6);
+    const care = sugg.filter(s=>s.tier==="care").slice(0,6);
+    html += `<div class="card" style="border-color:var(--green)"><h3>💡 Foods to try next in Week ${w.n}</h3>
+      <p class="muted">Because ${esc(S.baby.name)} has tolerated <b>${toleratedNames.length?toleratedNames.map(esc).join(", "):'some foods'}</b>, here's what allergy cross-reactivity research suggests is lower- or higher-risk to try next. Still introduce one new food at a time and confirm with your pediatrician.</p>`;
     const renderSugg = (s)=>`<div class="check-row"><div class="check-main">
         <div class="check-title">${s.emoji||"🍽️"} ${esc(s.name)}
           ${s.tier==="care"?'<span class="pill allergen">🟡 introduce carefully</span>':'<span class="pill safe">🟢 likely well tolerated</span>'}</div>
         <div class="check-meta">${esc(s.why)}</div>
-      </div><button class="btn sec small" style="flex:0 0 auto" data-sugg="${esc(s.name)}" data-se="${esc(s.emoji||'🍽️')}">Add</button></div>`;
-    if(ok.length){ html += `<div class="check-meta" style="margin:6px 0;font-weight:600;color:var(--green-d)">🟢 Lower-risk relatives</div>` + ok.map(renderSugg).join(""); }
-    if(care.length){ html += `<div class="check-meta" style="margin:10px 0 6px;font-weight:600;color:var(--red)">🟡 Related but higher cross-reactivity — introduce singly</div>` + care.map(renderSugg).join(""); }
-    html += `<div class="note" style="margin-top:8px">🟢 = foods in a <b>low cross-reactivity</b> family (tolerating one is reassuring for the others). 🟡 = <b>high cross-reactivity</b> family — tolerating one does <b>not</b> mean the others are safe, so offer each on its own and watch. Rates from Francis et al., J Food Allergy 2020 (FARE).</div>`;
+      </div><button class="btn sec small" style="flex:0 0 auto" data-sugg="${esc(s.name)}" data-se="${esc(s.emoji||'🍽️')}">Add to Week ${w.n}</button></div>`;
+    if(ok.length){ html += `<div class="check-meta" style="margin:6px 0;font-weight:600;color:var(--green-d)">🟢 Lower-risk — reassuring to try</div>` + ok.map(renderSugg).join(""); }
+    if(care.length){ html += `<div class="check-meta" style="margin:10px 0 6px;font-weight:600;color:var(--red)">🟡 Higher cross-reactivity — introduce one at a time</div>` + care.map(renderSugg).join(""); }
+    html += `<div class="note" style="margin-top:8px">🟢 = a <b>low cross-reactivity</b> family (tolerating one is reassuring for the others — e.g. tolerating peanut makes other legumes like soy, lentils, chickpeas low-risk). 🟡 = <b>high cross-reactivity</b> family — tolerating one does <b>not</b> mean the others are safe, so offer each on its own and watch. Rates from Francis et al., J Food Allergy 2020 (FARE).</div>`;
     html += `</div>`;
   }
 
@@ -393,38 +467,73 @@ function groupEmoji(g){
   return f ? (f.groupEmoji||f.emoji) : "🍽️";
 }
 
-/* ---------- FOODS (with nutrition + filter) ---------- */
+/* ---------- FOODS (nutrition + age + search + sort filters) ---------- */
 function renderFoods(){
-  const filterOpts = Object.keys(NUTRIENTS).map(n=>`<option value="${n}" ${foodFilterNutrient===n?'selected':''}>${NUTRIENTS[n]} ${n}</option>`).join("");
-  let html = `<div class="card"><h2>Recommended first foods</h2>
-    <p class="muted">Around 6 months. Introduce one new food at a time and watch for a few days. Tap <b>Add</b> to put a food into <b>Week ${S.activeWeek}</b> of your plan.</p>
-    <label>Filter by key vitamin / mineral</label>
-    <select id="nutFilter"><option value="">Show all foods</option>${filterOpts}</select>
+  const nutOpts = Object.keys(NUTRIENTS).map(n=>`<option value="${n}" ${foodFilterNutrient===n?'selected':''}>${NUTRIENTS[n]} ${n}</option>`).join("");
+  const ageOpts = Object.keys(AGE_BANDS).map(a=>`<option value="${a}" ${foodAgeBand===a?'selected':''}>${esc(AGE_BANDS[a])}</option>`).join("");
+  let html = `<div class="card"><h2>Foods</h2>
+    <p class="muted">Tap a food's name for full prep info, or <b>Add</b> to put it into <b>Week ${S.activeWeek}</b> of your plan. Age guidance is general — your pediatrician's advice wins.</p>
+    <label>Search</label>
+    <input id="foodSearch" placeholder="Search foods (e.g. banana, iron, nut)" value="${esc(foodSearch)}">
+    <div class="row" style="margin-top:10px">
+      <div><label style="margin-top:0">Age group</label>
+        <select id="ageFilter"><option value="">All ages</option>${ageOpts}</select></div>
+      <div><label style="margin-top:0">Key nutrient</label>
+        <select id="nutFilter"><option value="">All nutrients</option>${nutOpts}</select></div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button class="btn ${foodSort==='az'?'':'sec'} small" id="sortToggle">${foodSort==='az'?'✓ A → Z':'Sort A → Z'}</button>
+      <button class="btn ${foodShowAllergens?'':'sec'} small" id="allToggle">${foodShowAllergens?'✓ Showing allergens':'Allergens hidden'}</button>
+    </div>
   </div>`;
 
-  const list = FOODS.filter(f=> !foodFilterNutrient || (f.nutrients||[]).includes(foodFilterNutrient));
-  html += `<div class="card">`;
-  if(!list.length) html += `<p class="muted">No listed foods highlight that nutrient. Try another.</p>`;
+  // build the working list: foods (+ allergens if toggled)
+  let list = FOODS.map(f=>({ ...f, isAllergen:false }));
+  if(foodShowAllergens) list = list.concat(ALLERGENS.map(a=>({ ...a, isAllergen:true })));
+
+  // filters
+  const q = foodSearch.trim().toLowerCase();
+  list = list.filter(f=>{
+    if(foodAgeBand && f.ageBand !== foodAgeBand) return false;
+    if(foodFilterNutrient && !(f.nutrients||[]).includes(foodFilterNutrient)) return false;
+    if(q){
+      const hay = [f.name, f.group, (f.nutrients||[]).join(" "), f.ageText, f.tips, f.note].join(" ").toLowerCase();
+      if(!hay.includes(q)) return false;
+    }
+    return true;
+  });
+  // sort
+  if(foodSort==="az") list.sort((a,b)=>a.name.localeCompare(b.name));
+
+  html += `<div class="card"><p class="muted" style="margin:0 0 8px">${list.length} food${list.length!==1?'s':''}</p>`;
+  if(!list.length) html += `<p class="muted">Nothing matches those filters. Clear the search or widen the age group.</p>`;
   list.forEach(f=>{
     const planned = allPlannedFoods().includes(f.name);
+    const rows = f.isAllergen
+      ? `<b>How</b><span>${esc(f.how)}</span><b>Amount</b><span>${esc(f.amount)}</span><b>Watch</b><span>${esc(f.watch)}</span><b>Note</b><span>${esc(f.note)}</span>`
+      : `<b>Cook</b><span>${esc(f.cook)}</span><b>Temp</b><span>${esc(f.temp)}</span><b>Texture</b><span>${esc(f.texture)}</span><b>Amount</b><span>${esc(f.amount)}</span><b>Tips</b><span>${esc(f.tips)}</span>`;
     html += `<div class="food-item">
-      <div class="food-name">${f.emoji} ${esc(f.name)} <span class="pill safe">${esc(f.group)}</span></div>
+      <div class="food-name"><span class="tap-name" data-prep="${esc(f.name)}">${f.emoji} ${esc(f.name)}</span>
+        ${f.isAllergen?'<span class="pill allergen">allergen</span>':`<span class="pill safe">${esc(f.group)}</span>`}
+        ${f.choke?'<span class="pill allergen">⚠ choking care</span>':''}</div>
+      <div class="pill" style="background:#eef4e8;border-color:#d6e4c9;color:var(--green-d)">👶 ${esc(AGE_BANDS[f.ageBand]||'~6 months')}</div>
       <div style="margin:4px 0">${(f.nutrients||[]).map(n=>`<span class="pill ${n===foodFilterNutrient?'allergen':''}">${NUTRIENTS[n]||''} ${esc(n)}</span>`).join("")}</div>
-      <div class="food-grid">
-        <b>Cook</b><span>${esc(f.cook)}</span>
-        <b>Temp</b><span>${esc(f.temp)}</span>
-        <b>Texture</b><span>${esc(f.texture)}</span>
-        <b>Amount</b><span>${esc(f.amount)}</span>
-        <b>Tips</b><span>${esc(f.tips)}</span>
-      </div>
-      <button class="btn ${planned?'sec':''} small" style="margin-top:8px" data-food="${esc(f.name)}" data-emoji="${f.emoji}">${planned?'✓ In plan — add again':'➕ Add to Week '+S.activeWeek}</button>
+      <div class="food-grid"><b>Age</b><span>${esc(f.ageText||'')}</span>${rows}</div>
+      <button class="btn ${planned?'sec':''} small" style="margin-top:8px" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In plan — add again':'➕ Add to Week '+S.activeWeek}</button>
     </div>`;
   });
   html += `</div>`;
-  html += `<div class="note">🥄 <b>Choking safety:</b> no honey before 12 months, no whole nuts/grapes/hard chunks, no cow's milk as a drink before 12 months, no added salt or sugar. Always supervise; keep baby upright.</div>`;
+  html += `<div class="note">🥄 <b>Choking safety:</b> no honey before 12 months, no whole nuts/grapes/round coins/hard chunks, no cow's milk as a drink before 12 months, no added salt or sugar. Smash berries & quarter tomatoes. Always supervise; keep baby upright.</div>`;
   main.innerHTML = html;
+
+  const si = document.getElementById("foodSearch");
+  si.oninput = (e)=>{ foodSearch=e.target.value; const pos=e.target.selectionStart; render(); const n=document.getElementById("foodSearch"); if(n){ n.focus(); n.setSelectionRange(pos,pos); } };
+  document.getElementById("ageFilter").onchange = (e)=>{ foodAgeBand=e.target.value; render(); };
   document.getElementById("nutFilter").onchange = (e)=>{ foodFilterNutrient=e.target.value; render(); };
-  document.querySelectorAll("[data-food]").forEach(b=>b.onclick=()=>{ addFoodToWeek(S.activeWeek,b.dataset.food,b.dataset.emoji,false); render(); });
+  document.getElementById("sortToggle").onclick = ()=>{ foodSort = foodSort==="az"?"default":"az"; render(); };
+  document.getElementById("allToggle").onclick = ()=>{ foodShowAllergens = !foodShowAllergens; render(); };
+  document.querySelectorAll("[data-prep]").forEach(b=>b.onclick=()=>showPrep(b.dataset.prep));
+  document.querySelectorAll("[data-food]").forEach(b=>b.onclick=()=>{ addFoodToWeek(S.activeWeek,b.dataset.food,b.dataset.emoji,b.dataset.fa==="1"); render(); });
 }
 
 /* ---------- PANTRY ---------- */
@@ -584,6 +693,7 @@ function renderSettings(){
 
   html += `<div class="card"><h2>☁️ Google Sheets sync</h2>
     <p class="muted">Saves on this device automatically and syncs to your Google Sheet so both phones share one plan.</p>
+    <button class="btn sec small" id="tutBtn" style="margin-bottom:10px">📖 How to set up cloud saving (tutorial)</button>
     <label>Your Apps Script Web App link</label>
     <input id="cloudUrl" placeholder="https://script.google.com/macros/s/..../exec" value="${esc(url)}">
     <div class="row" style="margin-top:10px"><button class="btn small" id="saveCloud">Connect</button><button class="btn sec small" id="pullCloud">⬇️ Load</button></div>
@@ -609,6 +719,7 @@ function renderSettings(){
     if(S.cloud.url){ setSyncLabel("Connecting…"); await cloudPush(); toast("Connected."); } else setSyncLabel("Local only",false); render(); };
   document.getElementById("pullCloud").onclick=cloudPull;
   document.getElementById("pushCloud").onclick=async()=>{ await cloudPush(); toast("Saved to Sheet."); };
+  { const tb=document.getElementById("tutBtn"); if(tb) tb.onclick=showSetupTutorial; }
   document.getElementById("exportBtn").onclick=()=>{ const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="baby-solids-backup.json"; a.click(); };
   document.getElementById("resetBtn").onclick=()=>{ if(confirm("Erase all tracked data on this device? (Your Google Sheet copy stays unless you overwrite it.)")){
