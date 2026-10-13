@@ -124,6 +124,39 @@ function toast(msg){
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
 
+/* ---------------- modal / popup ---------------- */
+function openModal(innerHtml, centered){
+  closeModal();
+  const bg = document.createElement("div");
+  bg.className = "modal-bg" + (centered?" center":"");
+  bg.id = "modalBg";
+  bg.innerHTML = `<div class="modal"><button class="modal-close" id="modalClose">✕</button>${innerHtml}</div>`;
+  document.body.appendChild(bg);
+  bg.onclick = (e)=>{ if(e.target===bg) closeModal(); };
+  document.getElementById("modalClose").onclick = closeModal;
+  return bg;
+}
+function closeModal(){ const m=document.getElementById("modalBg"); if(m) m.remove(); }
+
+/* popup: how to prep a food (same info as Foods tab) */
+function showPrep(name){
+  const it = itemByName(name);
+  if(!it){
+    openModal(`<h3>🍽️ ${esc(name)}</h3><p class="muted">This is a custom food you added, so there's no stored prep guide. General tips: cook until very soft, cool to lukewarm, purée or mash smooth, start with 1–2 teaspoons, and watch for any reaction.</p>`, true);
+    return;
+  }
+  const nutr = (it.nutrients||[]).map(n=>`<span class="pill">${NUTRIENTS[n]||''} ${esc(n)}</span>`).join("");
+  const rows = it.isAllergen
+    ? `<b>How</b><span>${esc(it.how)}</span><b>Amount</b><span>${esc(it.amount)}</span><b>Watch</b><span>${esc(it.watch)}</span><b>Note</b><span>${esc(it.note)}</span>`
+    : `<b>Cook</b><span>${esc(it.cook)}</span><b>Temp</b><span>${esc(it.temp)}</span><b>Texture</b><span>${esc(it.texture)}</span><b>Amount</b><span>${esc(it.amount)}</span><b>Tips</b><span>${esc(it.tips)}</span>`;
+  openModal(`
+    <h3>${it.emoji} ${esc(it.name)} ${it.isAllergen?'<span class="pill allergen">allergen</span>':`<span class="pill safe">${esc(it.group)}</span>`}</h3>
+    <div style="margin:6px 0 10px">${nutr}</div>
+    <div class="food-grid">${rows}</div>
+    <div class="note" style="margin-top:12px">Educational guidance — confirm amounts & allergen timing with your pediatrician.</div>
+  `, true);
+}
+
 /* all food names ever added to any week */
 function allPlannedFoods(){
   const set = new Set();
@@ -173,6 +206,42 @@ function logReaction(weekN, name, day){
   if(txt===null) return;
   it.reactions[day] = { at: stampNow(), by: S.activeParent, text: txt.trim() };
   save(); render(); toast("Reaction note saved with a timestamp.");
+}
+
+/* ---- edit WHEN an activity happened (keeps an edited-at stamp) ---- */
+function toLocalInput(iso){
+  // yyyy-MM-ddThh:mm for <input type=datetime-local>, in local time
+  const d = iso ? new Date(iso) : new Date();
+  const p = n=>String(n).padStart(2,"0");
+  return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+function editEventTime(weekN, name, kind, key){
+  const it = week(weekN).intros[name]; if(!it) return;
+  const target = kind==="check" ? it.checks[key] : it.reactions[key];
+  if(!target) return;
+  const html = `
+    <h3>✏️ Edit when this happened</h3>
+    <p class="muted">${esc(name)} — ${kind==="check"?"check":"reaction note"}. Set the real date & time the activity occurred. We'll keep a record that this entry was edited.</p>
+    <label>Actual date &amp; time</label>
+    <input type="datetime-local" id="editDt" value="${toLocalInput(target.at)}">
+    ${target.editedAt?`<p class="editstamp">last edited by ${esc(target.editedBy||'?')} on ${fmtStamp(target.editedAt)}</p>`:''}
+    <div class="row" style="margin-top:12px">
+      <button class="btn small" id="editSave">Save time</button>
+      <button class="btn sec small" id="editCancel">Cancel</button>
+    </div>`;
+  openModal(html, true);
+  document.getElementById("editCancel").onclick = closeModal;
+  document.getElementById("editSave").onclick = ()=>{
+    const v = document.getElementById("editDt").value;
+    if(!v){ toast("Pick a date & time."); return; }
+    const newIso = new Date(v).toISOString();
+    if(!target.origAt) target.origAt = target.at;   // remember the first recorded time once
+    target.at = newIso;
+    target.editedAt = stampNow();
+    target.editedBy = S.activeParent;
+    save(); closeModal(); render();
+    toast("Updated the activity time (edit recorded).");
+  };
 }
 
 /* ---------------- rendering ---------------- */
@@ -251,9 +320,9 @@ function renderPlan(){
     const item = itemByName(name);
     html += `<div class="card">
       <div class="dayhead">
-        <div><h3 style="margin:0">${it.emoji} ${esc(name)} ${it.isAllergen?'<span class="pill allergen">allergen</span>':''}
+        <div><h3 style="margin:0"><span class="tap-name" data-prep="${esc(name)}">${it.emoji} ${esc(name)}</span> ${it.isAllergen?'<span class="pill allergen">allergen</span>':''}
           ${it.introduced?'<span class="pill safe">Introduced ✓</span>':''}</h3>
-          ${item?`<span class="muted">${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}</span>`:''}
+          <span class="muted" data-prep2="${esc(name)}" style="cursor:pointer">👆 tap the name for prep info${item?` · ${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}`:''}</span>
         </div>
         <button class="btn danger small" style="width:auto" data-rm="${esc(name)}">Remove</button>
       </div>`;
@@ -266,11 +335,17 @@ function renderPlan(){
         html += `<div class="check-row">
           <div class="check-box ${c?'on':''}" data-week="${w.n}" data-food="${esc(name)}" data-day="${d.day}" data-item="${itm.id}">${c?'✓':''}</div>
           <div class="check-main"><div class="check-title">${esc(itm.text)}</div>
-          ${c?`<span class="stamp">✓ ${esc(c.by)} · ${fmtStamp(c.at)}</span>`:`<div class="check-meta">not checked yet</div>`}</div></div>`;
+          ${c?`<span class="stamp">✓ ${esc(c.by)} · ${fmtStamp(c.at)}</span>
+             <button class="pencil" data-edit="check" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${d.day}:${itm.id}">✏️ edit time</button>
+             ${c.editedAt?`<div class="editstamp">edited by ${esc(c.editedBy||'?')} · ${fmtStamp(c.editedAt)}</div>`:''}`
+            :`<div class="check-meta">not checked yet</div>`}</div></div>`;
       });
       const r = it.reactions[d.day];
       html += `<div class="react-note" style="padding-left:4px">
-        ${r?`<span class="stamp react">⚠ ${esc(r.by)} · ${fmtStamp(r.at)}</span><div class="note">${esc(r.text)||'(no text)'}</div>`:''}
+        ${r?`<span class="stamp react">⚠ ${esc(r.by)} · ${fmtStamp(r.at)}</span>
+          <button class="pencil" data-edit="react" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${d.day}">✏️ edit time</button>
+          ${r.editedAt?`<div class="editstamp">edited by ${esc(r.editedBy||'?')} · ${fmtStamp(r.editedAt)}</div>`:''}
+          <div class="note">${esc(r.text)||'(no text)'}</div>`:''}
         <button class="btn danger small" style="margin-top:6px;width:auto" data-react="${esc(name)}" data-rday="${d.day}">⚠️ Log reaction / note</button>
       </div></details>`;
     });
@@ -294,6 +369,9 @@ function wirePlan(){
   document.querySelectorAll("[data-rm]").forEach(b=>b.onclick=()=>{ if(confirm(`Remove ${b.dataset.rm} from Week ${S.activeWeek}?`)) removeFoodFromWeek(S.activeWeek,b.dataset.rm); });
   document.querySelectorAll(".check-box").forEach(b=>b.onclick=()=>toggleCheck(+b.dataset.week,b.dataset.food,+b.dataset.day,b.dataset.item));
   document.querySelectorAll("[data-react]").forEach(b=>b.onclick=()=>logReaction(S.activeWeek,b.dataset.react,+b.dataset.rday));
+  document.querySelectorAll("[data-prep]").forEach(b=>b.onclick=()=>showPrep(b.dataset.prep));
+  document.querySelectorAll("[data-prep2]").forEach(b=>b.onclick=()=>showPrep(b.dataset.prep2));
+  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editEventTime(+b.dataset.ew, b.dataset.ef, b.dataset.edit, b.dataset.ek));
 }
 
 /* build try-next suggestions from tolerated groups, excluding already-planned */
@@ -455,10 +533,12 @@ function renderLog(){
       if(it.introduced) byFood[key].introduced = true;
       Object.entries(it.checks||{}).forEach(([k,c])=>{
         const [day,itemId]=k.split(":"); const dObj=it.days.find(d=>d.day==day); const itm=dObj&&dObj.items.find(x=>x.id===itemId);
-        byFood[key].events.push({ at:c.at, by:c.by, text:(itm?itm.text:itemId), react:false, week:w.n, day });
+        byFood[key].events.push({ at:c.at, by:c.by, text:(itm?itm.text:itemId), react:false, week:w.n, day,
+          food:name, kind:"check", ekey:k, editedAt:c.editedAt, editedBy:c.editedBy });
       });
       Object.entries(it.reactions||{}).forEach(([day,r])=>{
-        byFood[key].events.push({ at:r.at, by:r.by, text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, day });
+        byFood[key].events.push({ at:r.at, by:r.by, text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, day,
+          food:name, kind:"react", ekey:day, editedAt:r.editedAt, editedBy:r.editedBy });
       });
     });
   });
@@ -482,11 +562,14 @@ function renderLog(){
       html += `<div class="check-row"><div class="check-main">
         <div class="check-title" style="font-weight:500">${esc(e.text)}</div>
         <span class="stamp ${e.react?'react':''}">${esc(e.by)} · W${e.week} D${e.day} · ${fmtStamp(e.at)}</span>
+        <button class="pencil" data-edit="${e.kind}" data-ew="${e.week}" data-ef="${esc(e.food)}" data-ek="${esc(e.ekey)}">✏️ edit time</button>
+        ${e.editedAt?`<div class="editstamp">edited by ${esc(e.editedBy||'?')} · ${fmtStamp(e.editedAt)}</div>`:''}
       </div></div>`;
     });
     html += `</details></div>`;
   });
   main.innerHTML = html;
+  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editEventTime(+b.dataset.ew, b.dataset.ef, b.dataset.edit, b.dataset.ek));
 }
 
 /* ---------- SETTINGS ---------- */
