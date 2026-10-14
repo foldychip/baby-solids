@@ -148,3 +148,12 @@ code{background:#f0eef6;padding:1px 5px;border-radius:4px;font-size:12px}
 .dot.blue{background:#4a9c5d}.dot.orange{background:#e0b020}.dot.green{background:#c0564b}
 .cal-legend{display:flex;gap:16px;justify-content:center;margin-top:12px;font-size:12px;color:var(--muted)}
 .cal-legend span{display:flex;align-items:center;gap:5px}
+
+/* ---- Day-of-week checkbox row (Plan) ---- */
+.dow-row{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
+.dow-cell{border:1.5px solid var(--line);background:#fff;border-radius:11px;cursor:pointer;padding:7px 2px;
+  display:flex;flex-direction:column;align-items:center;gap:1px;color:var(--ink)}
+.dow-cell.on{background:var(--green);border-color:var(--green);color:#fff}
+.dow-n{font-size:11px;font-weight:700}
+.dow-d{font-size:12px;opacity:.7}
+.dow-cell.on .dow-d{opacity:.9}

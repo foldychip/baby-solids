@@ -24,11 +24,11 @@ migrate();
 
 /* ---------------- date helpers ---------------- */
 function todayISO(){ const d=new Date(); d.setHours(0,0,0,0); return d.toISOString(); }
-function mondayOf(iso){
-  const d = new Date(iso); const dow = (d.getDay()+6)%7; // 0=Mon
+function weekAnchor(iso){
+  const d = new Date(iso); const dow = d.getDay(); // 0=Sun
   d.setDate(d.getDate()-dow); d.setHours(0,0,0,0); return d;
 }
-function weekStart(n){ const m = mondayOf(S.startDateISO); m.setDate(m.getDate()+(n-1)*7); return m; }
+function weekStart(n){ const m = weekAnchor(S.startDateISO); m.setDate(m.getDate()+(n-1)*7); return m; }
 function weekRangeLabel(n){
   const s = weekStart(n); const e = new Date(s); e.setDate(e.getDate()+6);
   const f = d=>d.toLocaleDateString([], {month:"short",day:"numeric"});
@@ -36,6 +36,8 @@ function weekRangeLabel(n){
 }
 function dayDate(weekN, dayN){ const s = weekStart(weekN); const d=new Date(s); d.setDate(d.getDate()+(dayN-1)); return d; }
 function dayLabel(weekN, dayN){ return dayDate(weekN,dayN).toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"}); }
+/* weekday index (0=Mon .. 6=Sun) -> real Date within week N (weeks are Monday-anchored) */
+function dowDate(weekN, idx){ const s = weekStart(weekN); const d=new Date(s); d.setDate(d.getDate()+idx); return d; }
 
 /* ---------------- migration from v1 ---------------- */
 function migrate(){
@@ -84,6 +86,8 @@ function normalizeState(){
       it.days.forEach(d=>{ if(!Array.isArray(d.items)) d.items = []; if(typeof d.day!=="number") d.day = 1; });
       if(!it.checks || typeof it.checks!=="object") it.checks = {};
       if(!it.reactions || typeof it.reactions!=="object") it.reactions = {};
+      if(!it.dow || typeof it.dow!=="object") it.dow = {};
+      if(!Array.isArray(it.reactList)) it.reactList = [];
       it.emoji = it.emoji || "🍽️";
       it.introduced = !!it.introduced;
       // ensure every planned food has an intro entry
@@ -323,9 +327,33 @@ function introducedFoods(){
 function startedFoods(){
   const out = [];
   S.weeks.forEach(w=> Object.entries(w.intros||{}).forEach(([name,it])=>{
-    if(it.introduced || Object.keys(it.checks||{}).length) out.push(name);
+    const dowTicks = it.dow ? Object.values(it.dow).filter(d=>d&&d.on).length : 0;
+    if(it.introduced || Object.keys(it.checks||{}).length || dowTicks) out.push(name);
   }) );
   return [...new Set(out)];
+}
+/* Tick/untick a feeding day-of-week. Stores the real feeding date so the Tracker plots that day. */
+function toggleDow(weekN, name, idx){
+  const it = week(weekN).intros[name]; if(!it) return;
+  it.dow = it.dow || {};
+  const rec = it.dow[idx];
+  if(rec && rec.on){ delete it.dow[idx]; }
+  else {
+    const fed = dowDate(weekN, idx);
+    const now = new Date();
+    fed.setHours(now.getHours(), now.getMinutes(), 0, 0); // feeding DATE = that weekday, time = now
+    it.dow[idx] = { on:true, fedISO: fed.toISOString(), at: stampNow(), by: S.activeParent };
+  }
+  save(); render();
+}
+/* Add a freeform reaction note (feeding-day = today unless edited later). */
+function addReaction(weekN, name){
+  const it = week(weekN).intros[name]; if(!it) return;
+  const txt = prompt("Reaction / note — describe what you noticed (symptoms, timing). A record for you and your doctor:");
+  if(txt===null) return;
+  it.reactList = it.reactList || [];
+  it.reactList.unshift({ at: stampNow(), fedISO: stampNow(), by: S.activeParent, text: txt.trim() });
+  save(); render(); toast("Reaction note saved.");
 }
 /* the groups the baby has tried — introduced OR started (so suggestions appear sooner) */
 function triedGroups(){
@@ -384,13 +412,19 @@ function toLocalInput(iso){
 }
 function editEventTime(weekN, name, kind, key){
   const it = week(weekN).intros[name]; if(!it) return;
-  const target = kind==="check" ? it.checks[key] : it.reactions[key];
+  let target=null, timeField="at";
+  if(kind==="check"){ target = it.checks[key]; }
+  else if(kind==="react"){ target = it.reactions[key]; }
+  else if(kind==="dow"){ target = it.dow && it.dow[key]; timeField="fedISO"; }    // edit the feeding date
+  else if(kind==="reactlist"){ target = it.reactList && it.reactList[+key]; timeField="fedISO"; }
   if(!target) return;
+  const label = kind==="check"?"check" : (kind==="dow"?"feeding day" : "reaction note");
+  const curVal = target[timeField] || target.at;
   const html = `
     <h3>✏️ Edit when this happened</h3>
-    <p class="muted">${esc(name)} — ${kind==="check"?"check":"reaction note"}. Set the real date & time the activity occurred. We'll keep a record that this entry was edited.</p>
+    <p class="muted">${esc(titleCase(name))} — ${label}. Set the real date &amp; time it occurred. We'll keep a record that this entry was edited.</p>
     <label>Actual date &amp; time</label>
-    <input type="datetime-local" id="editDt" value="${toLocalInput(target.at)}">
+    <input type="datetime-local" id="editDt" value="${toLocalInput(curVal)}">
     ${target.editedAt?`<p class="editstamp">last edited by ${esc(target.editedBy||'?')} on ${fmtStamp(target.editedAt)}</p>`:''}
     <div class="row" style="margin-top:12px">
       <button class="btn small" id="editSave">Save time</button>
@@ -402,12 +436,12 @@ function editEventTime(weekN, name, kind, key){
     const v = document.getElementById("editDt").value;
     if(!v){ toast("Pick a date & time."); return; }
     const newIso = new Date(v).toISOString();
-    if(!target.origAt) target.origAt = target.at;   // remember the first recorded time once
-    target.at = newIso;
-    target.editedAt = stampNow();
+    if(!target.origAt) target.origAt = curVal;   // remember the first recorded value once
+    target[timeField] = newIso;                   // move the feeding date/time
+    target.editedAt = stampNow();                 // record WHEN the edit happened (kept as detail)
     target.editedBy = S.activeParent;
     save(); closeModal(); render();
-    toast("Updated the activity time (edit recorded).");
+    toast("Updated the time (edit recorded).");
   };
 }
 
@@ -591,32 +625,49 @@ function renderPlan(){
         </div>
         <button class="btn danger small" style="width:auto" data-rm="${esc(name)}">Remove</button>
       </div>
-      <button class="btn ${it.introduced?'sec':''} small" style="margin-bottom:6px" data-intro="${esc(name)}">${it.introduced?'✓ Introduced (tap to undo)':'Mark introduced ✓'}</button>`;
-    // 3 day watch
-    it.days.forEach(d=>{
-      const total=d.items.length, done=d.items.filter(x=>it.checks[`${d.day}:${x.id}`]).length;
-      const dayKey = `${w.n}:${esc(name)}:${d.day}`;
-      const openAttr = (S.settings.openDays && S.settings.openDays[dayKey]) ? 'open' : '';
-      html += `<details data-dkey="${dayKey}" ${openAttr}><summary>Day ${d.day} · ${dayLabel(w.n,d.day)} <span class="muted">(${done}/${total})</span></summary>`;
-      d.items.forEach(itm=>{
-        const c = it.checks[`${d.day}:${itm.id}`];
-        html += `<div class="check-row">
-          <div class="check-box ${c?'on':''}" data-week="${w.n}" data-food="${esc(name)}" data-day="${d.day}" data-item="${itm.id}">${c?'✓':''}</div>
-          <div class="check-main"><div class="check-title">${esc(itm.text)}</div>
-          ${c?`<span class="stamp">✓ ${esc(c.by)} · ${fmtStamp(c.at)}</span>
-             <button class="pencil" data-edit="check" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${d.day}:${itm.id}">✏️ edit time</button>
-             ${c.editedAt?`<div class="editstamp">edited by ${esc(c.editedBy||'?')} · ${fmtStamp(c.editedAt)}</div>`:''}`
-            :`<div class="check-meta">not checked yet</div>`}</div></div>`;
-      });
-      const r = it.reactions[d.day];
-      html += `<div class="react-note" style="padding-left:4px">
-        ${r?`<span class="stamp react">⚠ ${esc(r.by)} · ${fmtStamp(r.at)}</span>
-          <button class="pencil" data-edit="react" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${d.day}">✏️ edit time</button>
-          ${r.editedAt?`<div class="editstamp">edited by ${esc(r.editedBy||'?')} · ${fmtStamp(r.editedAt)}</div>`:''}
-          <div class="note">${esc(r.text)||'(no text)'}</div>`:''}
-        <button class="btn danger small" style="margin-top:6px;width:auto" data-react="${esc(name)}" data-rday="${d.day}">⚠️ Log reaction / note</button>
-      </div></details>`;
+      <button class="btn ${it.introduced?'sec':''} small" style="margin-bottom:8px" data-intro="${esc(name)}">${it.introduced?'✓ Introduced (tap to undo)':'Mark introduced ✓'}</button>`;
+    // Day-of-week checkboxes mapped to this week's real Mon–Sun dates.
+    // A ticked day stores { on:true, fedISO, at, by } so the Tracker plots the FEEDING day.
+    it.dow = it.dow || {}; // { 0..6 : {on, fedISO, at, by, editedAt, editedBy} }  (0=Sun)
+    const dowNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
+    html += `<div class="muted" style="margin:2px 0 6px">Tap the day you fed ${esc(titleCase(name))}:</div><div class="dow-row">`;
+    dowNames.forEach((dn,idx)=>{
+      const rec = it.dow[idx];
+      const dte = dowDate(w.n, idx);
+      html += `<button class="dow-cell ${rec&&rec.on?'on':''}" data-dow="${idx}" data-food="${esc(name)}" title="${dte.toLocaleDateString()}">
+        <span class="dow-n">${dn}</span><span class="dow-d">${dte.getDate()}</span></button>`;
     });
+    html += `</div>`;
+    // show stamps for ticked days
+    const ticked = Object.keys(it.dow).filter(k=>it.dow[k]&&it.dow[k].on).map(Number).sort((a,b)=>a-b);
+    if(ticked.length){
+      html += `<div style="margin-top:6px">`;
+      ticked.forEach(idx=>{
+        const rec=it.dow[idx];
+        html += `<div class="check-row" style="padding:7px 0"><div class="check-main">
+          <span class="stamp">✓ ${dowNames[idx]} ${fmtStamp(rec.fedISO)} · by ${esc(rec.by||'?')}</span>
+          <button class="pencil" data-edit="dow" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${idx}">✏️ edit time</button>
+          ${rec.editedAt?`<div class="editstamp">edited by ${esc(rec.editedBy||'?')} · ${fmtStamp(rec.editedAt)}</div>`:''}
+          <div class="check-meta">recorded ${fmtStamp(rec.at)}</div>
+        </div></div>`;
+      });
+      html += `</div>`;
+    }
+    // Reaction button + any logged reactions (freeform)
+    it.reactList = it.reactList || []; // [{at, by, text, fedISO}]
+    html += `<button class="btn danger small" style="width:auto;margin-top:8px" data-reactnew="${esc(name)}">⚠️ Reaction / note</button>`;
+    if(it.reactList.length){
+      html += `<div style="margin-top:6px">`;
+      it.reactList.forEach((r,ri)=>{
+        html += `<div class="check-row" style="padding:7px 0"><div class="check-main">
+          <span class="stamp react">⚠ ${esc(r.by||'?')} · ${fmtStamp(r.at)}</span>
+          <button class="pencil" data-edit="reactlist" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${ri}">✏️ edit time</button>
+          ${r.editedAt?`<div class="editstamp">edited by ${esc(r.editedBy||'?')} · ${fmtStamp(r.editedAt)}</div>`:''}
+          <div class="note">${esc(r.text)||'(no note)'}</div>
+        </div></div>`;
+      });
+      html += `</div>`;
+    }
     html += `</div>`;
   });
 
@@ -633,7 +684,7 @@ function wirePlan(){
   // Event delegation: ONE listener handles every tappable element, so a handler
   // can never silently fail to bind even if a later part of render hiccups.
   main.onclick = (e)=>{
-    const t = e.target.closest("[data-week],#addWeek,#addFoodBtn,[data-sugg],[data-rm],[data-intro],.check-box,[data-react],[data-prep],[data-prep2],[data-edit]");
+    const t = e.target.closest("[data-week],#addWeek,#addFoodBtn,[data-sugg],[data-rm],[data-intro],[data-dow],[data-reactnew],.check-box,[data-react],[data-prep],[data-prep2],[data-edit]");
     if(!t) return;
     if(t.id==="addWeek"){ ensureWeek(S.weeks.length+1); S.activeWeek=S.weeks.length; save(); render(); return; }
     if(t.id==="addFoodBtn"){ currentTab="foods"; setActiveTab(); render(); toast(`Pick foods — they add to Week ${S.activeWeek}`); return; }
@@ -641,6 +692,8 @@ function wirePlan(){
     if(t.hasAttribute("data-sugg")){ const it=itemByName(t.dataset.sugg); addFoodToWeek(S.activeWeek,t.dataset.sugg,t.dataset.se,it?it.isAllergen:false); render(); return; }
     if(t.hasAttribute("data-rm")){ if(confirm(`Remove ${t.dataset.rm} from Week ${S.activeWeek}?`)) removeFoodFromWeek(S.activeWeek,t.dataset.rm); return; }
     if(t.hasAttribute("data-intro")){ markIntroduced(S.activeWeek,t.dataset.intro); return; }
+    if(t.hasAttribute("data-dow")){ toggleDow(S.activeWeek, t.dataset.food, +t.dataset.dow); return; }
+    if(t.hasAttribute("data-reactnew")){ addReaction(S.activeWeek, t.dataset.reactnew); return; }
     if(t.classList.contains("check-box")){ toggleCheck(+t.dataset.week,t.dataset.food,+t.dataset.day,t.dataset.item); return; }
     if(t.hasAttribute("data-react")){ logReaction(S.activeWeek,t.dataset.react,+t.dataset.rday); return; }
     if(t.hasAttribute("data-prep")){ showPrep(t.dataset.prep); return; }
@@ -847,23 +900,43 @@ function renderAllergens(){
 }
 
 /* ---------- TRACKER (calendar) ---------- */
-/* Collect every logged event, keyed by local calendar day (YYYY-MM-DD). */
+/* Collect every logged event, keyed by the FEEDING day (YYYY-MM-DD).
+   New model: it.dow[idx]={on,fedISO,at,by}, it.reactList=[{fedISO,at,by,text}].
+   The record timestamp (at) is kept in each event's detail. Legacy checks/reactions
+   are still read so older/recovered data continues to show. */
 function activityByDay(){
   const map = {}; // dayKey -> { foods:Set, allergen:bool, react:bool, events:[] }
   const dk = iso => { const d=new Date(iso); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+  const bucket = key => (map[key] = map[key] || {foods:new Set(),allergen:false,react:false,events:[]});
   S.weeks.forEach(w=> Object.entries(w.intros||{}).forEach(([name,it])=>{
+    // NEW: day-of-week feeding ticks
+    Object.entries(it.dow||{}).forEach(([idx,rec])=>{
+      if(!rec || !rec.on) return;
+      const fed = rec.fedISO || rec.at; if(!fed) return;
+      const key = dk(fed); const m = bucket(key);
+      m.foods.add(name); if(it.isAllergen) m.allergen=true;
+      m.events.push({ fedAt:fed, at:rec.at, by:rec.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen,
+        text:"Fed "+titleCase(name), react:false, week:w.n, kind:"dow", ekey:idx, editedAt:rec.editedAt, editedBy:rec.editedBy });
+    });
+    // NEW: freeform reaction notes
+    (it.reactList||[]).forEach((r,ri)=>{
+      const fed = r.fedISO || r.at; if(!fed) return;
+      const key = dk(fed); const m = bucket(key);
+      m.react=true;
+      m.events.push({ fedAt:fed, at:r.at, by:r.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen,
+        text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, kind:"reactlist", ekey:ri, editedAt:r.editedAt, editedBy:r.editedBy });
+    });
+    // LEGACY: old per-day checks/reactions (recovered or pre-redesign data)
     Object.entries(it.checks||{}).forEach(([k,c])=>{
-      if(!c.at) return; const key=dk(c.at);
-      (map[key] = map[key] || {foods:new Set(),allergen:false,react:false,events:[]});
-      map[key].foods.add(name); if(it.isAllergen) map[key].allergen=true;
-      const [day,itemId]=k.split(":"); const dObj=it.days.find(d=>d.day==day); const itm=dObj&&dObj.items.find(x=>x.id===itemId);
-      map[key].events.push({ at:c.at, by:c.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:(itm?itm.text:itemId), react:false, week:w.n, day, kind:"check", ekey:k, editedAt:c.editedAt, editedBy:c.editedBy });
+      if(!c.at) return; const key=dk(c.at); const m=bucket(key);
+      m.foods.add(name); if(it.isAllergen) m.allergen=true;
+      const [day,itemId]=k.split(":"); const dObj=(it.days||[]).find(d=>d.day==day); const itm=dObj&&dObj.items.find(x=>x.id===itemId);
+      m.events.push({ fedAt:c.at, at:c.at, by:c.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:(itm?itm.text:itemId), react:false, week:w.n, kind:"check", ekey:k, editedAt:c.editedAt, editedBy:c.editedBy });
     });
     Object.entries(it.reactions||{}).forEach(([day,r])=>{
-      if(!r.at) return; const key=dk(r.at);
-      (map[key] = map[key] || {foods:new Set(),allergen:false,react:false,events:[]});
-      map[key].react=true;
-      map[key].events.push({ at:r.at, by:r.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, day, kind:"react", ekey:day, editedAt:r.editedAt, editedBy:r.editedBy });
+      if(!r.at) return; const key=dk(r.at); const m=bucket(key);
+      m.react=true;
+      m.events.push({ fedAt:r.at, at:r.at, by:r.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, kind:"react", ekey:day, editedAt:r.editedAt, editedBy:r.editedBy });
     });
   }));
   return map;
@@ -925,7 +998,7 @@ function renderTracker(){
     foodsThatDay.forEach(name=>{
       const it = itemByName(name) || {};
       const evs = sel.events.filter(e=>e.food===name);
-      const firstTime = evs.map(e=>e.at).sort()[0];
+      const firstTime = evs.map(e=>e.fedAt||e.at).sort()[0];
       html += `<div class="tile" data-prep="${esc(name)}">
         <div class="tile-img">${it.emoji||"🍽️"}
           <div class="tile-badges"><span class="tile-badge ${it.isAllergen?'allergen':''}">${it.isAllergen?'⚠ allergen':esc(it.group||'food')}</span></div>
@@ -935,13 +1008,14 @@ function renderTracker(){
       </div>`;
     });
     html += `</div>`;
-    // detailed events with edit-time
+    // detailed events: sorted by feeding time; show feeding time + record timestamp
     html += `<div style="margin-top:12px">`;
-    sel.events.sort((a,b)=>(a.at||"").localeCompare(b.at||"")).forEach(e=>{
+    sel.events.sort((a,b)=>(a.fedAt||a.at||"").localeCompare(b.fedAt||b.at||"")).forEach(e=>{
       html += `<div class="check-row"><div class="check-main">
         <div class="check-title" style="font-weight:500">${e.emoji} ${esc(titleCase(e.food))} — ${esc(e.text)}</div>
-        <span class="stamp ${e.react?'react':''}">${esc(e.by)} · ${fmtStamp(e.at)}</span>
+        <span class="stamp ${e.react?'react':''}">${esc(e.by)} · ${fmtStamp(e.fedAt||e.at)}</span>
         <button class="pencil" data-edit="${e.kind}" data-ew="${e.week}" data-ef="${esc(e.food)}" data-ek="${esc(e.ekey)}">✏️ edit time</button>
+        <div class="check-meta">recorded ${fmtStamp(e.at)}</div>
         ${e.editedAt?`<div class="editstamp">edited by ${esc(e.editedBy||'?')} · ${fmtStamp(e.editedAt)}</div>`:''}
       </div></div>`;
     });
