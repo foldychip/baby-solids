@@ -4,42 +4,44 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#6b8e5a">
+<meta name="theme-color" content="#1f2437">
 <title>Little Bites — Baby Solids Tracker</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <div id="app">
-  <!-- Header -->
+  <!-- Dark baby header -->
   <header class="appbar">
-    <div class="brand">🥣 Little Bites</div>
-    <div class="brand-sub">Baby Solids Tracker</div>
-    <button id="syncBtn" class="sync-chip" title="Cloud sync status">☁️ <span id="syncState">Local only</span></button>
+    <div class="baby-id">
+      <div class="baby-avatar" id="babyAvatar">👶</div>
+      <div>
+        <div class="baby-name" id="babyNameTop">Baby</div>
+        <div class="baby-age" id="babyAgeTop">just starting solids</div>
+      </div>
+    </div>
+    <div class="stat-chips">
+      <button class="stat-chip" id="statFoods" title="Foods introduced">🥄 <span id="statFoodsN">0</span></button>
+      <button class="stat-chip" id="statWeeks" title="Weeks in your plan">🏆 <span id="statWeeksN">0</span></button>
+      <button class="stat-chip sync" id="syncBtn" title="Cloud sync">☁️<span id="syncState"></span></button>
+    </div>
   </header>
 
   <!-- Medical disclaimer -->
   <div class="disclaimer" id="disclaimer">
-    <strong>⚠️ Not medical advice.</strong> This app uses commonly-cited general guidance (AAP-style).
-    Always confirm the food list, amounts, and especially the allergen schedule with <strong>your own pediatrician</strong>,
-    and watch your baby for any reaction. Call your doctor or emergency services for any signs of a serious reaction.
+    <strong>⚠️ Not medical advice.</strong> General guidance (AAP-style). Confirm the food list, amounts, and
+    especially allergen timing with <strong>your pediatrician</strong>, and watch for any reaction.
     <button id="dismissDisc" class="link-btn">Got it</button>
   </div>
 
-  <!-- Tabs -->
-  <nav class="tabs">
-    <button class="tab active" data-tab="plan">📅 Plan</button>
-    <button class="tab" data-tab="foods">🍠 Foods</button>
-    <button class="tab" data-tab="pantry">🧊 Pantry</button>
-    <button class="tab" data-tab="allergens">🥚 Allergens</button>
-    <button class="tab" data-tab="log">📝 Log</button>
-    <button class="tab" data-tab="settings">⚙️ Setup</button>
-  </nav>
-
   <main id="main"></main>
 
-  <footer class="foot">
-    <span id="babyNameFoot">Baby</span> · <span id="lastSaved">not saved yet</span>
-  </footer>
+  <!-- Bottom tab bar -->
+  <nav class="bottom-nav">
+    <button class="bnav active" data-tab="home"><span class="bi">🏠</span><span>Home</span></button>
+    <button class="bnav" data-tab="foods"><span class="bi">🥑</span><span>Foods</span></button>
+    <button class="bnav" data-tab="plan"><span class="bi">🍽️</span><span>Plan</span></button>
+    <button class="bnav" data-tab="tracker"><span class="bi">📈</span><span>Tracker</span></button>
+  </nav>
 </div>
 
 <script src="data.js"></script>

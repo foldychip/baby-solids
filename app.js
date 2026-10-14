@@ -184,14 +184,23 @@ function showPrep(name){
     return;
   }
   const nutr = (it.nutrients||[]).map(n=>`<span class="pill">${NUTRIENTS[n]||''} ${esc(n)}</span>`).join("");
-  const rows = it.isAllergen
-    ? `<b>How</b><span>${esc(it.how)}</span><b>Amount</b><span>${esc(it.amount)}</span><b>Watch</b><span>${esc(it.watch)}</span><b>Note</b><span>${esc(it.note)}</span>`
-    : `<b>Cook</b><span>${esc(it.cook)}</span><b>Temp</b><span>${esc(it.temp)}</span><b>Texture</b><span>${esc(it.texture)}</span><b>Amount</b><span>${esc(it.amount)}</span><b>Tips</b><span>${esc(it.tips)}</span>`;
+  // Primary line shown up front; the rest folds into "More Details"
+  const primary = it.isAllergen
+    ? `<b>How</b><span>${esc(it.how)}</span>`
+    : `<b>Cook</b><span>${esc(it.cook)}</span><b>Texture</b><span>${esc(it.texture)}</span>`;
+  const more = it.isAllergen
+    ? `<b>Age</b><span>${esc(it.ageText||'')}</span><b>Amount</b><span>${esc(it.amount)}</span><b>Watch</b><span>${esc(it.watch)}</span><b>Note</b><span>${esc(it.note)}</span>`
+    : `<b>Age</b><span>${esc(it.ageText||'')}</span><b>Temp</b><span>${esc(it.temp)}</span><b>Amount</b><span>${esc(it.amount)}</span><b>Tips</b><span>${esc(it.tips)}</span>`;
   openModal(`
-    <h3>${it.emoji} ${esc(it.name)} ${it.isAllergen?'<span class="pill allergen">allergen</span>':`<span class="pill safe">${esc(it.group)}</span>`}</h3>
+    <div class="hero-img" style="height:120px;border-radius:14px;font-size:62px;margin:4px 0 12px">${it.emoji}</div>
+    <h3>${esc(it.name)} ${it.isAllergen?'<span class="pill allergen">⚠ allergen</span>':`<span class="pill safe">${esc(it.group)}</span>`} ${it.choke?'<span class="pill allergen">⚠ choking care</span>':''}</h3>
+    <div class="muted" style="margin:2px 0 8px">👶 ${esc(AGE_BANDS[it.ageBand]||'~6 months')}</div>
     <div style="margin:6px 0 10px">${nutr}</div>
-    <div class="food-grid">${rows}</div>
-    <div class="note" style="margin-top:12px">Educational guidance — confirm amounts & allergen timing with your pediatrician.</div>
+    <div class="food-grid">${primary}</div>
+    <details style="margin-top:12px"><summary>More Details</summary>
+      <div class="food-grid" style="margin-top:8px">${more}</div>
+    </details>
+    <div class="note" style="margin-top:12px">Educational guidance — confirm amounts &amp; allergen timing with your pediatrician.</div>
   `, true);
 }
 
@@ -370,27 +379,34 @@ function editEventTime(weekN, name, kind, key){
 
 /* ---------------- rendering ---------------- */
 const main = document.getElementById("main");
-let currentTab = "plan";
+let currentTab = "home";
 let foodFilterNutrient = "";   // nutrition filter on Foods tab
 let foodSearch = "";           // search box text
 let foodSort = "default";      // "default" | "az"
 let foodAgeBand = "";          // "" | 6m | 6-9m | 9-12m | 12m+
 let foodShowAllergens = true;  // include allergens in the Foods list
 
+function fillHeader(){
+  const nm=document.getElementById("babyNameTop"); if(nm) nm.textContent = S.baby.name || "Baby";
+  const ag=document.getElementById("babyAgeTop"); if(ag) ag.textContent = S.baby.ageLabel || "just starting solids";
+  const fn=document.getElementById("statFoodsN"); if(fn) fn.textContent = introducedFoods().length;
+  const wn=document.getElementById("statWeeksN"); if(wn) wn.textContent = S.weeks.length;
+}
+
 function render(){
-  const bf = document.getElementById("babyNameFoot"); if(bf) bf.textContent = S.baby.name || "Baby";
+  fillHeader();
   const disc = document.getElementById("disclaimer"); if(disc) disc.classList.toggle("hide", S.settings.disclaimerDismissed);
-  if(S.cloud.url){ const el=document.getElementById("syncState"); if(el && el.textContent==="Local only") setSyncLabel("Connected", true); }
-  if(!S.cloud.url) setSyncLabel("Local only", false);
+  if(!S.cloud.url) setSyncLabel("", false);
 
   try{
     if(main) main.onclick = null;   // clear any delegated handler from a prior tab
-    if(currentTab==="plan") renderPlan();
+    if(currentTab==="home") renderHome();
     else if(currentTab==="foods") renderFoods();
+    else if(currentTab==="plan") renderPlan();
+    else if(currentTab==="tracker") renderLog();
     else if(currentTab==="pantry") renderPantry();
-    else if(currentTab==="allergens") renderAllergens();
-    else if(currentTab==="log") renderLog();
     else if(currentTab==="settings") renderSettings();
+    else renderHome();
   }catch(err){
     if(main) main.innerHTML = `<div class="card"><h3>⚠️ Something hiccuped on this screen</h3>
       <p class="muted">The app caught an error so it didn't go blank. This helps us fix it:</p>
@@ -398,6 +414,60 @@ function render(){
       <p class="muted">Your saved data is safe. Try another tab, or screenshot this and send it over.</p></div>`;
     console.error("render error:", err);
   }
+}
+
+/* ---------- HOME (dashboard) ---------- */
+function renderHome(){
+  const introduced = introducedFoods();
+  const started = startedFoods();
+  const totalFoods = FOODS.length + ALLERGENS.length;
+  const pct = Math.min(100, Math.round((introduced.length / 12) * 100)); // ~12 as an early milestone
+
+  // most recent activity across all weeks
+  const recent = [];
+  S.weeks.forEach(w=> Object.entries(w.intros||{}).forEach(([name,it])=>{
+    const times = Object.values(it.checks||{}).map(c=>c.at).filter(Boolean);
+    if(times.length){ times.sort((a,b)=>b.localeCompare(a)); recent.push({ name, emoji:it.emoji, at:times[0], week:w.n, introduced:it.introduced }); }
+  }));
+  recent.sort((a,b)=>(b.at||"").localeCompare(a.at||""));
+
+  let html = `<div class="card hero">
+    <div class="hero-img">${recent[0]?recent[0].emoji:"🥣"}</div>
+    <div class="hero-body">
+      <h1>First Bites</h1>
+      <p class="sub">Grips and grasps and maybe a taste too. It's all about exploring.</p>
+      <div class="prog"><i style="width:${pct}%"></i></div>
+      <div class="muted">${introduced.length} food${introduced.length!==1?'s':''} introduced · ${started.length} started · ${S.weeks.length} week${S.weeks.length!==1?'s':''} planned</div>
+    </div>
+  </div>`;
+
+  // quick actions
+  html += `<div class="row" style="margin-bottom:13px">
+    <button class="btn small" data-go="plan">📅 This week's plan</button>
+    <button class="btn sec small" data-go="foods">🥑 Browse foods</button>
+  </div>`;
+
+  // most recent meals
+  html += `<div class="card"><h2>Most recent meals</h2>`;
+  if(!recent.length){
+    html += `<p class="muted">Nothing logged yet. Head to <b>Plan</b>, add a food to this week, and check off the first taste — it'll show up here with a timestamp.</p>`;
+  } else {
+    recent.slice(0,6).forEach(r=>{
+      html += `<div class="listrow"><div class="thumb">${r.emoji}</div>
+        <div class="check-main"><div class="check-title">${esc(r.name)} ${r.introduced?'<span class="pill safe">Introduced ✓</span>':''}</div>
+          <div class="check-meta">Week ${r.week} · ${fmtStamp(r.at)}</div></div></div>`;
+    });
+  }
+  html += `</div>`;
+
+  // utility links (Pantry + Setup live here now that the tab bar is 4 tabs)
+  html += `<div class="row">
+    <button class="btn sec small" data-go="pantry">🧊 Fridge / Pantry</button>
+    <button class="btn sec small" data-go="settings">⚙️ Setup &amp; sync</button>
+  </div>`;
+
+  main.innerHTML = html;
+  main.onclick = (e)=>{ const t=e.target.closest("[data-go]"); if(t){ currentTab=t.dataset.go; setActiveTab(); render(); } };
 }
 
 /* ---------- PLAN (weekly calendar) ---------- */
@@ -547,12 +617,12 @@ function groupEmoji(g){
   return f ? (f.groupEmoji||f.emoji) : "🍽️";
 }
 
-/* ---------- FOODS (nutrition + age + search + sort filters) ---------- */
+/* ---------- FOODS (tiles + filters) ---------- */
 function renderFoods(){
   const nutOpts = Object.keys(NUTRIENTS).map(n=>`<option value="${n}" ${foodFilterNutrient===n?'selected':''}>${NUTRIENTS[n]} ${n}</option>`).join("");
   const ageOpts = Object.keys(AGE_BANDS).map(a=>`<option value="${a}" ${foodAgeBand===a?'selected':''}>${esc(AGE_BANDS[a])}</option>`).join("");
   let html = `<div class="card"><h2>Foods</h2>
-    <p class="muted">Tap a food's name for full prep info, or <b>Add</b> to put it into <b>Week ${S.activeWeek}</b> of your plan. Age guidance is general — your pediatrician's advice wins.</p>
+    <p class="muted">Tap a tile for prep info &amp; "More Details", or use <b>Add</b> to put a food into <b>Week ${S.activeWeek}</b> of your plan. Age guidance is general — your pediatrician's advice wins.</p>
     <label>Search</label>
     <input id="foodSearch" placeholder="Search foods (e.g. banana, iron, nut)" value="${esc(foodSearch)}">
     <div class="row" style="margin-top:10px">
@@ -570,40 +640,39 @@ function renderFoods(){
   // build the working list: foods (+ allergens if toggled)
   let list = FOODS.map(f=>({ ...f, isAllergen:false }));
   if(foodShowAllergens) list = list.concat(ALLERGENS.map(a=>({ ...a, isAllergen:true })));
-
-  // filters
   const q = foodSearch.trim().toLowerCase();
   list = list.filter(f=>{
     if(foodAgeBand && f.ageBand !== foodAgeBand) return false;
     if(foodFilterNutrient && !(f.nutrients||[]).includes(foodFilterNutrient)) return false;
-    if(q){
-      const hay = [f.name, f.group, (f.nutrients||[]).join(" "), f.ageText, f.tips, f.note].join(" ").toLowerCase();
-      if(!hay.includes(q)) return false;
-    }
+    if(q){ const hay=[f.name,f.group,(f.nutrients||[]).join(" "),f.ageText,f.tips,f.note].join(" ").toLowerCase(); if(!hay.includes(q)) return false; }
     return true;
   });
-  // sort
   if(foodSort==="az") list.sort((a,b)=>a.name.localeCompare(b.name));
 
-  html += `<div class="card"><p class="muted" style="margin:0 0 8px">${list.length} food${list.length!==1?'s':''}</p>`;
-  if(!list.length) html += `<p class="muted">Nothing matches those filters. Clear the search or widen the age group.</p>`;
+  html += `<p class="muted" style="margin:0 0 10px">${list.length} food${list.length!==1?'s':''}</p>`;
+  if(!list.length) html += `<div class="card"><p class="muted">Nothing matches those filters. Clear the search or widen the age group.</p></div>`;
+
+  // TILE GRID — tapping a tile opens prep (with More Details inside)
+  html += `<div class="tiles">`;
   list.forEach(f=>{
     const planned = allPlannedFoods().includes(f.name);
-    const rows = f.isAllergen
-      ? `<b>How</b><span>${esc(f.how)}</span><b>Amount</b><span>${esc(f.amount)}</span><b>Watch</b><span>${esc(f.watch)}</span><b>Note</b><span>${esc(f.note)}</span>`
-      : `<b>Cook</b><span>${esc(f.cook)}</span><b>Temp</b><span>${esc(f.temp)}</span><b>Texture</b><span>${esc(f.texture)}</span><b>Amount</b><span>${esc(f.amount)}</span><b>Tips</b><span>${esc(f.tips)}</span>`;
-    html += `<div class="food-item">
-      <div class="food-name"><span class="tap-name" data-prep="${esc(f.name)}">${f.emoji} ${esc(f.name)}</span>
-        ${f.isAllergen?'<span class="pill allergen">allergen</span>':`<span class="pill safe">${esc(f.group)}</span>`}
-        ${f.choke?'<span class="pill allergen">⚠ choking care</span>':''}</div>
-      <div class="pill" style="background:#eef4e8;border-color:#d6e4c9;color:var(--green-d)">👶 ${esc(AGE_BANDS[f.ageBand]||'~6 months')}</div>
-      <div style="margin:4px 0">${(f.nutrients||[]).map(n=>`<span class="pill ${n===foodFilterNutrient?'allergen':''}">${NUTRIENTS[n]||''} ${esc(n)}</span>`).join("")}</div>
-      <div class="food-grid"><b>Age</b><span>${esc(f.ageText||'')}</span>${rows}</div>
-      <button class="btn ${planned?'sec':''} small" style="margin-top:8px" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In plan — add again':'➕ Add to Week '+S.activeWeek}</button>
+    html += `<div class="tile" data-prep="${esc(f.name)}">
+      <div class="tile-img">${f.emoji}
+        <div class="tile-badges">
+          <span class="tile-badge ${f.isAllergen?'allergen':''}">${f.isAllergen?'⚠ allergen':esc(f.group)}</span>
+          ${f.choke?'<span class="tile-badge choke">⚠ choke</span>':''}
+        </div>
+      </div>
+      <div class="tile-body">
+        <div class="tile-name">${esc(f.name)}</div>
+        <div class="tile-group">👶 ${esc((AGE_BANDS[f.ageBand]||'~6 months').replace(/\s*\(.*\)/,''))}</div>
+        <div class="tile-nutr">${(f.nutrients||[]).slice(0,4).map(n=>NUTRIENTS[n]||'').join(" ")}</div>
+        <button class="btn ${planned?'sec':''} small" style="width:100%;margin-top:9px" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In plan':'➕ Add'}</button>
+      </div>
     </div>`;
   });
   html += `</div>`;
-  html += `<div class="note">🥄 <b>Choking safety:</b> no honey before 12 months, no whole nuts/grapes/round coins/hard chunks, no cow's milk as a drink before 12 months, no added salt or sugar. Smash berries & quarter tomatoes. Always supervise; keep baby upright.</div>`;
+  html += `<div class="note">🥄 <b>Choking safety:</b> no honey before 12 months, no whole nuts/grapes/round coins/hard chunks, no cow's milk as a drink before 12 months, no added salt or sugar. Smash berries &amp; quarter tomatoes. Always supervise; keep baby upright.</div>`;
   main.innerHTML = html;
 
   const si = document.getElementById("foodSearch");
@@ -612,13 +681,19 @@ function renderFoods(){
   document.getElementById("nutFilter").onchange = (e)=>{ foodFilterNutrient=e.target.value; render(); };
   document.getElementById("sortToggle").onclick = ()=>{ foodSort = foodSort==="az"?"default":"az"; render(); };
   document.getElementById("allToggle").onclick = ()=>{ foodShowAllergens = !foodShowAllergens; render(); };
-  document.querySelectorAll("[data-prep]").forEach(b=>b.onclick=()=>showPrep(b.dataset.prep));
-  document.querySelectorAll("[data-food]").forEach(b=>b.onclick=()=>{ addFoodToWeek(S.activeWeek,b.dataset.food,b.dataset.emoji,b.dataset.fa==="1"); render(); });
+  // Delegation: Add button adds to plan; tapping elsewhere on a tile opens prep.
+  main.onclick = (e)=>{
+    const addBtn = e.target.closest("[data-food]");
+    if(addBtn){ e.stopPropagation(); addFoodToWeek(S.activeWeek, addBtn.dataset.food, addBtn.dataset.emoji, addBtn.dataset.fa==="1"); render(); return; }
+    const tile = e.target.closest("[data-prep]");
+    if(tile){ showPrep(tile.dataset.prep); }
+  };
 }
 
 /* ---------- PANTRY ---------- */
 function renderPantry(){
-  let html = `<div class="card"><h2>🧊 Fridge / Pantry</h2>
+  let html = `<button class="btn sec small" data-go="home" style="margin-bottom:12px">← Home</button>
+    <div class="card"><h2>🧊 Fridge / Pantry</h2>
     <p class="muted">Type ingredients you have at home. We'll suggest baby-safe foods to try — matching your ingredients and pointing you toward foods in the same groups ${esc(S.baby.name)} already does well with.</p>
     <label>Add an ingredient</label>
     <div class="row"><input id="pantryIn" placeholder="e.g. sweet potato, yogurt, banana"><button class="btn small" style="flex:0 0 auto" id="pantryAdd">Add</button></div>`;
@@ -650,6 +725,7 @@ function wirePantry(){
   const inp=document.getElementById("pantryIn"); if(inp) inp.onkeydown=(e)=>{ if(e.key==="Enter") add(); };
   document.querySelectorAll("[data-prm]").forEach(x=>x.onclick=()=>{ S.pantry.splice(+x.dataset.prm,1); save(); render(); });
   document.querySelectorAll("[data-padd]").forEach(x=>x.onclick=()=>{ const it=itemByName(x.dataset.padd); addFoodToWeek(S.activeWeek,x.dataset.padd,x.dataset.pe,it?it.isAllergen:false); render(); });
+  document.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>{ currentTab=x.dataset.go; setActiveTab(); render(); });
 }
 /* match pantry text to known foods, + same-group next-steps */
 function pantrySuggestions(){
@@ -711,7 +787,7 @@ function renderAllergens(){
 
 /* ---------- LOG (summarized per food) ---------- */
 function renderLog(){
-  let html = `<div class="card"><h2>History log</h2><p class="muted">One summary per food, newest activity first — with every timestamp and who did it folded in.</p></div>`;
+  let html = `<div class="card"><h2>📈 Tracker</h2><p class="muted">One summary per food, newest activity first — every timestamp and who logged it, folded in.</p></div>`;
   // gather per-food activity across all weeks
   const byFood = {};
   S.weeks.forEach(w=>{
@@ -764,8 +840,10 @@ function renderLog(){
 /* ---------- SETTINGS ---------- */
 function renderSettings(){
   const url = S.cloud.url || "";
-  let html = `<div class="card"><h2>Baby &amp; parents</h2>
+  let html = `<button class="btn sec small" data-go="home" style="margin-bottom:12px">← Home</button>`;
+  html += `<div class="card"><h2>Baby &amp; parents</h2>
     <label>Baby's name</label><input id="babyName" value="${esc(S.baby.name)}">
+    <label>Baby's age label (shown in header)</label><input id="babyAge" placeholder="e.g. 6 months" value="${esc(S.baby.ageLabel||'')}">
     <label>Parent / caregiver names (comma separated)</label><input id="parentsIn" value="${esc(S.baby.parents.join(", "))}">
     <label>Week 1 start date</label><input type="date" id="startDate" value="${new Date(S.startDateISO).toISOString().slice(0,10)}">
     <button class="btn small" style="margin-top:10px" id="saveProfile">Save</button>
@@ -789,12 +867,14 @@ function renderSettings(){
   main.innerHTML = html;
   document.getElementById("saveProfile").onclick=()=>{
     S.baby.name=document.getElementById("babyName").value.trim()||"Baby";
+    S.baby.ageLabel=document.getElementById("babyAge").value.trim();
     S.baby.parents=document.getElementById("parentsIn").value.split(",").map(s=>s.trim()).filter(Boolean);
     if(!S.baby.parents.length) S.baby.parents=["Parent 1"];
     if(!S.baby.parents.includes(S.activeParent)) S.activeParent=S.baby.parents[0];
     const dv=document.getElementById("startDate").value; if(dv){ const d=new Date(dv); d.setHours(0,0,0,0); S.startDateISO=d.toISOString(); }
     save(); toast("Saved"); render();
   };
+  document.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>{ currentTab=x.dataset.go; setActiveTab(); render(); });
   document.getElementById("saveCloud").onclick=async()=>{ S.cloud.url=document.getElementById("cloudUrl").value.trim(); saveLocal();
     if(S.cloud.url){ setSyncLabel("Connecting…"); await cloudPush(); toast("Connected."); } else setSyncLabel("Local only",false); render(); };
   document.getElementById("pullCloud").onclick=cloudPull;
@@ -807,10 +887,12 @@ function renderSettings(){
 }
 
 /* ---------------- tabs & boot ---------------- */
-function setActiveTab(){ document.querySelectorAll(".tab").forEach(t=>t.classList.toggle("active", t.dataset.tab===currentTab)); }
-document.querySelectorAll(".tab").forEach(t=>t.onclick=()=>{ currentTab=t.dataset.tab; setActiveTab(); render(); });
+function setActiveTab(){ document.querySelectorAll(".bnav").forEach(t=>t.classList.toggle("active", t.dataset.tab===currentTab)); }
+document.querySelectorAll(".bnav").forEach(t=>t.onclick=()=>{ currentTab=t.dataset.tab; setActiveTab(); render(); });
 { const d=document.getElementById("dismissDisc"); if(d) d.onclick=()=>{ S.settings.disclaimerDismissed=true; saveLocal(); render(); }; }
 { const s=document.getElementById("syncBtn"); if(s) s.onclick=()=>{ currentTab="settings"; setActiveTab(); render(); }; }
+{ const sf=document.getElementById("statFoods"); if(sf) sf.onclick=()=>{ currentTab="foods"; setActiveTab(); render(); }; }
+{ const sw=document.getElementById("statWeeks"); if(sw) sw.onclick=()=>{ currentTab="plan"; setActiveTab(); render(); }; }
 
 try{ normalizeState(); }catch(e){ console.error("normalize error:", e); }
 render();
