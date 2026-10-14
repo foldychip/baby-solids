@@ -181,6 +181,7 @@ function closeModal(){ const m=document.getElementById("modalBg"); if(m) m.remov
 
 /* popup: how to prep a food (same info as Foods tab) */
 function showPrep(name){
+  const it = itemByName(name);
   if(!it){
     openModal(`<h3>🍽️ ${esc(name)}</h3><p class="muted">This is a custom food you added, so there's no stored prep guide. General tips: cook until very soft, cool to lukewarm, purée or mash smooth, start with 1–2 teaspoons, and watch for any reaction.</p>`, true);
     return;
@@ -392,9 +393,23 @@ let trackerSelDayISO = "";     // selected day in the Tracker calendar
 
 function fillHeader(){
   const nm=document.getElementById("babyNameTop"); if(nm) nm.textContent = S.baby.name || "Baby";
-  const ag=document.getElementById("babyAgeTop"); if(ag) ag.textContent = S.baby.ageLabel || "just starting solids";
-  const fn=document.getElementById("statFoodsN"); if(fn) fn.textContent = introducedFoods().length;
-  const wn=document.getElementById("statWeeksN"); if(wn) wn.textContent = S.weeks.length;
+  const ag=document.getElementById("babyAgeTop"); if(ag) ag.textContent = babyAgeLabel();
+}
+/* Age label from birthday, rounded to the nearest whole month. */
+function babyAgeLabel(){
+  const bd = S.baby.birthday;
+  if(!bd) return S.baby.ageLabel || "just starting solids";
+  const b = new Date(bd); if(isNaN(b)) return S.baby.ageLabel || "just starting solids";
+  const now = new Date();
+  let months = (now.getFullYear()-b.getFullYear())*12 + (now.getMonth()-b.getMonth());
+  // fractional part from day-of-month, to round to nearest whole month
+  const dayFrac = (now.getDate()-b.getDate())/30;
+  months = Math.round(months + dayFrac);
+  if(months < 0) months = 0;
+  if(months < 1) return "newborn";
+  if(months < 12) return months+" month"+(months!==1?"s":"")+" old";
+  const yrs = Math.floor(months/12), rem = months%12;
+  return yrs+" yr"+(yrs!==1?"s":"") + (rem?(" "+rem+" mo"):"") + " old";
 }
 
 function render(){
@@ -922,7 +937,7 @@ function renderSettings(){
   let html = `<button class="btn sec small" data-go="home" style="margin-bottom:12px">← Home</button>`;
   html += `<div class="card"><h2>Baby &amp; parents</h2>
     <label>Baby's name</label><input id="babyName" value="${esc(S.baby.name)}">
-    <label>Baby's age label (shown in header)</label><input id="babyAge" placeholder="e.g. 6 months" value="${esc(S.baby.ageLabel||'')}">
+    <label>Baby's birthday (age shows in the header, rounded to the nearest month)</label><input type="date" id="babyBirthday" value="${esc(S.baby.birthday||'')}">
     <label>Parent / caregiver names (comma separated)</label><input id="parentsIn" value="${esc(S.baby.parents.join(", "))}">
     <label>Week 1 start date</label><input type="date" id="startDate" value="${new Date(S.startDateISO).toISOString().slice(0,10)}">
     <button class="btn small" style="margin-top:10px" id="saveProfile">Save</button>
@@ -946,7 +961,7 @@ function renderSettings(){
   main.innerHTML = html;
   document.getElementById("saveProfile").onclick=()=>{
     S.baby.name=document.getElementById("babyName").value.trim()||"Baby";
-    S.baby.ageLabel=document.getElementById("babyAge").value.trim();
+    S.baby.birthday=document.getElementById("babyBirthday").value||"";
     S.baby.parents=document.getElementById("parentsIn").value.split(",").map(s=>s.trim()).filter(Boolean);
     if(!S.baby.parents.length) S.baby.parents=["Parent 1"];
     if(!S.baby.parents.includes(S.activeParent)) S.activeParent=S.baby.parents[0];
@@ -970,8 +985,6 @@ function setActiveTab(){ document.querySelectorAll(".bnav").forEach(t=>t.classLi
 document.querySelectorAll(".bnav").forEach(t=>t.onclick=()=>{ currentTab=t.dataset.tab; setActiveTab(); render(); });
 { const d=document.getElementById("dismissDisc"); if(d) d.onclick=()=>{ S.settings.disclaimerDismissed=true; saveLocal(); render(); }; }
 { const s=document.getElementById("syncBtn"); if(s) s.onclick=()=>{ currentTab="settings"; setActiveTab(); render(); }; }
-{ const sf=document.getElementById("statFoods"); if(sf) sf.onclick=()=>{ currentTab="foods"; setActiveTab(); render(); }; }
-{ const sw=document.getElementById("statWeeks"); if(sw) sw.onclick=()=>{ currentTab="plan"; setActiveTab(); render(); }; }
 
 try{ normalizeState(); }catch(e){ console.error("normalize error:", e); }
 render();
