@@ -323,6 +323,14 @@ function allPlannedFoods(){
   S.weeks.forEach(w=> (w.foods||[]).forEach(f=>set.add(f)) );
   return [...set];
 }
+/* total number of day-of-week feeding ticks for a food across ALL weeks (days eaten/recorded) */
+function timesEaten(name){
+  let n = 0;
+  S.weeks.forEach(w=>{ const it=(w.intros||{})[name]; if(it&&it.dow){ n += Object.values(it.dow).filter(d=>d&&d.on).length; } });
+  return n;
+}
+/* is this food in a SPECIFIC week's plan */
+function foodInWeek(weekN, name){ const w=S.weeks[weekN-1]; return !!(w && (w.foods||[]).includes(name)); }
 /* names of foods marked introduced (tolerated) anywhere */
 function introducedFoods(){
   const out = [];
@@ -664,12 +672,11 @@ function renderPlan(){
     const item = itemByName(name);
     html += `<div class="card">
       <div><h3 style="margin:0"><span class="tap-name" data-prep="${esc(name)}" style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${it.emoji} ${esc(titleCase(name))}</span> ${it.isAllergen?'<span class="pill allergen">Allergen</span>':''}
-        ${it.introduced?'<span class="pill safe">Introduced ✓</span>':''}</h3>
+        ${timesEaten(name)?`<span class="pill safe">Fed ${timesEaten(name)}×</span>`:''}</h3>
         ${item?`<div class="muted" style="margin-top:4px">${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}</div>`:''}
       </div>
       <div class="btn-row">
         <button class="btn sec small" data-prep2="${esc(name)}">ℹ️ Prep</button>
-        <button class="btn ${it.introduced?'sec':''} small" data-intro="${esc(name)}">${it.introduced?'✓ Introduced':'Introduced'}</button>
         <button class="btn danger small" data-reactnew="${esc(name)}">⚠️ Reaction</button>
         <button class="btn danger small" data-rm="${esc(name)}">Remove</button>
       </div>`;
@@ -807,7 +814,8 @@ function renderFoods(){
   // TILE GRID — tapping a tile opens prep (with More Details inside)
   html += `<div class="tiles">`;
   list.forEach(f=>{
-    const planned = allPlannedFoods().includes(f.name);
+    const planned = foodInWeek(S.activeWeek, f.name);
+    const eaten = timesEaten(f.name);
     html += `<div class="tile" data-prep="${esc(f.name)}">
       <div class="tile-img">${f.emoji}
         <div class="tile-badges">
@@ -818,8 +826,9 @@ function renderFoods(){
       <div class="tile-body">
         <div class="tile-name">${esc(titleCase(f.name))}</div>
         <div class="tile-group">👶 ${esc((AGE_BANDS[f.ageBand]||'~6 months').replace(/\s*\(.*\)/,''))}</div>
+        ${eaten?`<div class="tile-group" style="color:var(--green-d);font-weight:700">🍽️ Eaten ${eaten} day${eaten!==1?'s':''}</div>`:''}
         <div class="tile-nutr">${(f.nutrients||[]).slice(0,4).map(n=>NUTRIENTS[n]||'').join(" ")}</div>
-        <button class="btn ${planned?'sec':''} small" style="width:100%;margin-top:9px" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In plan':'➕ Add'}</button>
+        <button class="btn ${planned?'sec':''} small" style="width:100%;margin-top:9px" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In Week '+S.activeWeek:'➕ Add'}</button>
       </div>
     </div>`;
   });
