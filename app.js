@@ -38,6 +38,8 @@ function dayDate(weekN, dayN){ const s = weekStart(weekN); const d=new Date(s); 
 function dayLabel(weekN, dayN){ return dayDate(weekN,dayN).toLocaleDateString([], {weekday:"short", month:"short", day:"numeric"}); }
 /* weekday index (0=Mon .. 6=Sun) -> real Date within week N (weeks are Monday-anchored) */
 function dowDate(weekN, idx){ const s = weekStart(weekN); const d=new Date(s); d.setDate(d.getDate()+idx); return d; }
+/* ISO timestamp -> local YYYY-MM-DD (for <input type=date>), avoiding UTC day-shift */
+function isoToLocalDate(iso){ const d=iso?new Date(iso):new Date(); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; }
 
 /* ---------------- migration from v1 ---------------- */
 function migrate(){
@@ -584,14 +586,14 @@ function renderPlan(){
     </div>
     <div class="muted" style="margin-bottom:8px">Checks record who &amp; when. Logging as the person above.</div>
     <div class="daysel" id="weekSel">
-      ${S.weeks.map(wk=>{
+      ${S.weeks.slice().sort((a,b)=>b.n-a.n).map(wk=>{
         const foods=(wk.foods||[]).length;
         const done=Object.values(wk.intros||{}).filter(i=>i.introduced).length;
         return `<div class="daychip ${wk.n===S.activeWeek?'active':''} ${foods&&done===foods?'done':''}" data-week="${wk.n}">
           Week ${wk.n}<small>${weekRangeLabel(wk.n)}</small></div>`;
       }).join("")}
-      <div class="daychip" id="addWeek" style="min-width:48px">＋<small>week</small></div>
     </div>
+    <button class="btn sec small" id="addWeek" style="width:auto;margin-top:10px">➕ Add a new week</button>
   </div>`;
 
   // week builder: add foods
@@ -1049,7 +1051,7 @@ function renderSettings(){
     <label>Baby's name</label><input id="babyName" value="${esc(S.baby.name)}">
     <label>Baby's birthday (age shows in the header, rounded to the nearest month)</label><input type="date" id="babyBirthday" value="${esc(S.baby.birthday||'')}">
     <label>Parent / caregiver names (comma separated)</label><input id="parentsIn" value="${esc(S.baby.parents.join(", "))}">
-    <label>Week 1 start date</label><input type="date" id="startDate" value="${new Date(S.startDateISO).toISOString().slice(0,10)}">
+    <label>Week 1 start date</label><input type="date" id="startDate" value="${isoToLocalDate(S.startDateISO)}">
     <button class="btn small" style="margin-top:10px" id="saveProfile">Save</button>
   </div>`;
 
@@ -1094,7 +1096,7 @@ function renderSettings(){
     S.baby.parents=document.getElementById("parentsIn").value.split(",").map(s=>s.trim()).filter(Boolean);
     if(!S.baby.parents.length) S.baby.parents=["Parent 1"];
     if(!S.baby.parents.includes(S.activeParent)) S.activeParent=S.baby.parents[0];
-    const dv=document.getElementById("startDate").value; if(dv){ const d=new Date(dv); d.setHours(0,0,0,0); S.startDateISO=d.toISOString(); }
+    const dv=document.getElementById("startDate").value; if(dv){ const d=new Date(dv+"T00:00:00"); d.setHours(0,0,0,0); S.startDateISO=d.toISOString(); }
     save(); toast("Saved"); render();
   };
   document.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>{ currentTab=x.dataset.go; setActiveTab(); render(); });
