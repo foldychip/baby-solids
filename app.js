@@ -630,32 +630,38 @@ function renderPlan(){
     <div class="muted" style="margin-bottom:8px">Checks record who &amp; when. Logging as the person above.</div>
     <div class="daysel" id="weekSel">
       ${S.weeks.slice().sort((a,b)=>b.n-a.n).map(wk=>{
-        const foods=(wk.foods||[]).length;
-        const done=Object.values(wk.intros||{}).filter(i=>i.introduced).length;
-        return `<div class="daychip ${wk.n===S.activeWeek?'active':''} ${foods&&done===foods?'done':''}" data-week="${wk.n}">
+        return `<div class="daychip ${wk.n===S.activeWeek?'active':''}" data-week="${wk.n}">
           Week ${wk.n}<small>${weekRangeLabel(wk.n)}</small></div>`;
       }).join("")}
     </div>
-    <button class="btn sec small" id="addWeek" style="width:auto;margin-top:10px">➕ Add a new week</button>
+    <div class="row" style="margin-top:10px">
+      <button class="btn sec small" id="addFoodBtn" style="width:auto">➕ Add a Food To This Week</button>
+      <button class="btn sec small" id="addWeek" style="width:auto">➕ Add a New Week</button>
+    </div>
   </div>`;
 
-  // week builder: add foods
+  // week builder: current week header
   html += `<div class="card">
-    <div class="dayhead"><h3 style="margin:0">Week ${w.n} · ${weekRangeLabel(w.n)}</h3></div>
-    <button class="btn sec small" id="addFoodBtn">➕ Add a food to this week</button>`;
+    <div class="dayhead"><h3 style="margin:0">Week ${w.n} · ${weekRangeLabel(w.n)}</h3></div>`;
   if(!(w.foods||[]).length){
     const okCount = buildSuggestions().length;
-    html += `<p class="muted" style="margin-top:10px">No foods yet for this week.${okCount?' See <b>Foods to try next</b> below — suggestions based on what '+esc(S.baby.name)+' already tolerates.':' Add from the <b>Foods</b> or <b>Allergens</b> tab, or tap the button above.'}</p>`;
+    html += `<p class="muted" style="margin-top:4px">No foods yet for this week.${okCount?' See <b>Foods to try next</b> below — suggestions based on what '+esc(S.baby.name)+' already tolerates.':' Tap <b>Add a Food To This Week</b> above, or pick from the <b>Foods</b> tab.'}</p>`;
   }
   html += `</div>`;
 
   // nutrient coverage for this week's foods
   {
-    const cov = nutrientCoverage(w.foods||[]);
+    const have = new Set(nutrientCoverage(w.foods||[]).have);
+    // Column 1: Vitamins A–E (A, C, D, E, then B vitamins). Columns 2–3: the rest, alphabetical.
+    const col1 = ["Vitamin A","Vitamin C","Vitamin D","Vitamin E","B vitamins"];
+    const rest = Object.keys(NUTRIENTS).filter(n=>!col1.includes(n)).sort((a,b)=>a.localeCompare(b));
+    const col2 = rest.slice(0,5), col3 = rest.slice(5,10);
+    const cell = n=>`<div class="nutr-cell ${have.has(n)?'on':''}">${have.has(n)?'✓':'○'} ${NUTRIENTS[n]||''} ${esc(n)}</div>`;
+    const colHtml = arr=>`<div class="nutr-col">${arr.map(cell).join("")}</div>`;
     html += `<div class="card"><h3>🥗 Nutrient coverage this week</h3>
-      <div style="margin-top:6px"><div class="check-meta" style="font-weight:600;color:var(--green-d);margin-bottom:3px">✓ Provided by this week's foods</div>${nutrPills(cov.have)}</div>
-      <div style="margin-top:10px"><div class="check-meta" style="font-weight:600;color:var(--red);margin-bottom:3px">◦ Not yet covered this week</div>${nutrPills(cov.missing, true)}</div>
-      <div class="note" style="margin-top:8px">A quick variety check — not a strict nutrition target. Breast milk/formula still provides most nutrition at this age. Confirm any concerns with your pediatrician.</div>
+      <p class="muted" style="margin:2px 0 8px"><span style="color:var(--green-d);font-weight:700">✓ green</span> = provided by this week's foods · <span style="opacity:.6">○ grey</span> = not yet covered</p>
+      <div class="nutr-grid">${colHtml(col1)}${colHtml(col2)}${colHtml(col3)}</div>
+      <div class="note" style="margin-top:10px">A quick variety check — not a strict nutrition target. Breast milk/formula still provides most nutrition at this age. Confirm any concerns with your pediatrician.</div>
     </div>`;
   }
 
