@@ -460,3 +460,62 @@ function makeIntroDays(label){
     ]}
   ];
 }
+
+
+
+/* ---------- First-year feeding guide (general reference by age) ----------
+   Factual, commonly-cited amounts/textures by age. GENERAL guidance only —
+   every baby differs; follow your pediatrician and your baby's hunger cues.
+   Rows are categories; columns are age bands. */
+const FEEDING_GUIDE = {
+  ages: ["4–6 months", "7 months", "8 months", "9 months", "10–12 months"],
+  rows: [
+    { label:"Breast milk or formula", emoji:"🍼", vals:[
+      "4–6 feedings/day, ~28–32 oz/day",
+      "3–5 feedings/day, ~30–32 oz/day",
+      "3–5 feedings/day, ~30–32 oz/day",
+      "3–5 feedings/day, ~30–32 oz/day",
+      "3–4 feedings/day, ~24–30 oz/day" ] },
+    { label:"Iron-fortified infant cereal", emoji:"🥣", vals:[
+      "3–5 tbsp single-grain, mixed with milk/formula",
+      "3–5 tbsp single-grain, mixed with milk/formula",
+      "5–8 tbsp single-grain, mixed with milk/formula",
+      "5–8 tbsp any variety, mixed with milk/formula",
+      "5–8 tbsp any variety, mixed with milk/formula" ] },
+    { label:"Fruits", emoji:"🍎", vals:[
+      "1–2 tbsp plain, strained · 1–2×/day",
+      "2–3 tbsp plain, strained · 2×/day",
+      "2–3 tbsp strained or soft-mashed · 2×/day",
+      "2–4 tbsp strained or soft-mashed · 2×/day",
+      "2–4 tbsp mashed/strained, cooked · 2×/day" ] },
+    { label:"Vegetables", emoji:"🥕", vals:[
+      "1–2 tbsp plain, strained · 1–2×/day",
+      "2–3 tbsp plain, strained · 2×/day",
+      "2–3 tbsp strained, mashed, soft · 2×/day",
+      "2–4 tbsp mashed, soft, bite-sized · 2×/day",
+      "2–4 tbsp mashed, soft, bite-sized · 2×/day" ] },
+    { label:"Meats & protein", emoji:"🍗", vals:[
+      "1–2 tbsp strained · 2×/day",
+      "1–2 tbsp strained · 2×/day",
+      "—",
+      "2–3 tbsp tender, chopped · 2×/day",
+      "2–3 tbsp finely chopped table meats, fish (no bones), mild cheese · 2×/day" ] },
+    { label:"Starches", emoji:"🥔", vals:[
+      "—", "—", "—",
+      "1/4–1/2 cup mashed potato, macaroni, spaghetti, bread · 2×/day",
+      "Soft table starches as part of meals" ] },
+    { label:"Snacks", emoji:"🍪", vals:[
+      "Teething biscuits, toast, crackers",
+      "Teething biscuits, toast, crackers, plain yogurt",
+      "Teething biscuits, toast, crackers, plain yogurt",
+      "Finger foods, toast, crackers, plain yogurt, cooked green beans",
+      "Finger foods, crackers, plain yogurt, cooked veg, cottage cheese, dry cereal" ] },
+    { label:"Development", emoji:"🌱", vals:[
+      "Make first cereal very soupy; thicken slowly.",
+      "Start finger foods and an open/straw cup.",
+      "Formula intake decreases; solids increase.",
+      "Eating more table foods — aim for good variety.",
+      "Moving to table food; begins self-feeding with spoon & cup." ] }
+  ],
+  note:"General first-year reference — amounts and timing vary by baby. Breast milk or formula remains the main source of nutrition in the first year. Always follow your pediatrician's guidance and watch your baby's hunger and fullness cues."
+};

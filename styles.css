@@ -159,6 +159,13 @@ code{background:#f0eef6;padding:1px 5px;border-radius:4px;font-size:12px}
 .nutr-cell{font-size:11.5px;padding:5px 6px;border-radius:9px;background:#f3f4f8;color:var(--muted);line-height:1.2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nutr-cell.on{background:#eef4e8;color:var(--green-d);font-weight:700}
 
+/* ---- General Guide list ---- */
+.guide-list{margin-top:6px}
+.guide-row{display:grid;grid-template-columns:40% 60%;gap:8px;padding:8px 0;border-top:1px solid var(--line);font-size:13px}
+.guide-row:first-child{border-top:0}
+.guide-k{font-weight:700}
+.guide-v{color:var(--ink)}
+
 /* ---- Day-of-week checkbox row (Plan) ---- */
 .dow-row{display:grid;grid-template-columns:repeat(7,1fr);gap:5px}
 .dow-cell{border:1.5px solid var(--line);background:#fff;border-radius:11px;cursor:pointer;padding:7px 2px;

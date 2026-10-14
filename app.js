@@ -317,6 +317,25 @@ function showSetupTutorial(){
   if(cb) cb.onclick = ()=>{ navigator.clipboard.writeText(APPS_SCRIPT_CODE).then(()=>{ cb.textContent="\u2713 Copied!"; }).catch(()=>{ toast("Press and hold the code to copy."); }); };
 }
 
+/* popup: General Guide — first-year feeding reference by age */
+function showGeneralGuide(){
+  const g = FEEDING_GUIDE;
+  let body = `<h3>📖 General Guide</h3>
+    <p class="muted">A first-year feeding reference by age. Tap through the ages. General guidance only — follow your pediatrician and your baby's cues.</p>`;
+  // one section per age band, each a label/value list
+  g.ages.forEach((age,ci)=>{
+    body += `<details ${ci===0?'open':''} style="margin-top:8px"><summary>${esc(age)}</summary><div class="guide-list">`;
+    g.rows.forEach(r=>{
+      const v = r.vals[ci];
+      if(!v || v==="—") return;
+      body += `<div class="guide-row"><div class="guide-k">${r.emoji} ${esc(r.label)}</div><div class="guide-v">${esc(v)}</div></div>`;
+    });
+    body += `</div></details>`;
+  });
+  body += `<div class="note" style="margin-top:12px">${esc(g.note)}</div>`;
+  openModal(body, true);
+}
+
 /* all food names ever added to any week */
 function allPlannedFoods(){
   const set = new Set();
@@ -603,13 +622,15 @@ function renderHome(){
   html += `</div>`;
 
   // utility links (Pantry + Setup live here now that the tab bar is 4 tabs)
-  html += `<div class="row">
+  html += `<button class="btn small" data-guide="1" style="margin-bottom:10px">📖 General Guide — first-year feeding</button>
+  <div class="row">
     <button class="btn sec small" data-go="pantry">🧊 Fridge / Pantry</button>
     <button class="btn sec small" data-go="settings">⚙️ Setup &amp; sync</button>
   </div>`;
 
   main.innerHTML = html;
   main.onclick = (e)=>{
+    const gd=e.target.closest("[data-guide]"); if(gd){ showGeneralGuide(); return; }
     const g=e.target.closest("[data-go]"); if(g){ currentTab=g.dataset.go; setActiveTab(); render(); return; }
     const tile=e.target.closest("[data-prep]"); if(tile){ showPrep(tile.dataset.prep); }
   };
