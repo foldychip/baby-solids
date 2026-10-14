@@ -661,14 +661,11 @@ function renderPlan(){
     </div>
   </div>`;
 
-  // week builder: current week header
-  html += `<div class="card">
-    <div class="dayhead"><h3 style="margin:0">Week ${w.n} · ${weekRangeLabel(w.n)}</h3></div>`;
+  // empty-week prompt only (the Week X header tile was redundant with the ribbon above)
   if(!(w.foods||[]).length){
     const okCount = buildSuggestions().length;
-    html += `<p class="muted" style="margin-top:4px">No foods yet for this week.${okCount?' See <b>Foods to try next</b> below — suggestions based on what '+esc(S.baby.name)+' already tolerates.':' Tap <b>Add a Food To This Week</b> above, or pick from the <b>Foods</b> tab.'}</p>`;
+    html += `<div class="card"><p class="muted" style="margin:0">No foods yet for this week.${okCount?' See <b>Foods to try next</b> below — suggestions based on what '+esc(S.baby.name)+' already tolerates.':' Tap <b>Add a Food To This Week</b> above, or pick from the <b>Foods</b> tab.'}</p></div>`;
   }
-  html += `</div>`;
 
   // nutrient coverage for this week's foods
   {
@@ -679,11 +676,12 @@ function renderPlan(){
     const col2 = rest.slice(0,5), col3 = rest.slice(5,10);
     const cell = n=>`<div class="nutr-cell ${have.has(n)?'on':''}">${have.has(n)?'✓':'○'} ${NUTRIENTS[n]||''} ${esc(n)}</div>`;
     const colHtml = arr=>`<div class="nutr-col">${arr.map(cell).join("")}</div>`;
-    html += `<div class="card"><h3>🥗 Nutrient coverage this week</h3>
-      <p class="muted" style="margin:2px 0 8px"><span style="color:var(--green-d);font-weight:700">✓ green</span> = provided by this week's foods · <span style="opacity:.6">○ grey</span> = not yet covered</p>
+    const nOpen = S.settings.nutrOpen!==false;
+    html += `<details class="card" id="nutrCard" ${nOpen?'open':''}><summary style="font-weight:700;font-size:15px;cursor:pointer">🥗 Nutrient coverage this week</summary>
+      <p class="muted" style="margin:6px 0 8px"><span style="color:var(--green-d);font-weight:700">✓ green</span> = covered · <span style="opacity:.6">○ grey</span> = not yet covered</p>
       <div class="nutr-grid">${colHtml(col1)}${colHtml(col2)}${colHtml(col3)}</div>
       <div class="note" style="margin-top:10px">A quick variety check — not a strict nutrition target. Breast milk/formula still provides most nutrition at this age. Confirm any concerns with your pediatrician.</div>
-    </div>`;
+    </details>`;
   }
 
   // try-next suggestions based on what's been tried (cross-reactivity-informed)
@@ -792,6 +790,7 @@ function wirePlan(){
   };
   const sc = document.getElementById("suggCard");
   if(sc) sc.ontoggle = ()=>{ S.settings.suggOpen = sc.open; saveLocal(); };
+  { const nc=document.getElementById("nutrCard"); if(nc) nc.ontoggle=()=>{ S.settings.nutrOpen = nc.open; saveLocal(); }; }
   // Remember which Day blocks the user opens, so a check-off never auto-collapses them.
   S.settings.openDays = S.settings.openDays || {};
   main.querySelectorAll("details[data-dkey]").forEach(dt=>{
