@@ -650,9 +650,9 @@ function renderPlan(){
         ${item?`<div class="muted" style="margin-top:4px">${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}</div>`:''}
       </div>
       <div class="btn-row">
-        <button class="btn sec small" data-prep2="${esc(name)}">ℹ️ Prep Info</button>
-        <button class="btn ${it.introduced?'sec':''} small" data-intro="${esc(name)}">${it.introduced?'✓ Introduced (Tap To Undo)':'Mark Introduced ✓'}</button>
-        <button class="btn danger small" data-reactnew="${esc(name)}">⚠️ Reaction / Note</button>
+        <button class="btn sec small" data-prep2="${esc(name)}">ℹ️ Prep</button>
+        <button class="btn ${it.introduced?'sec':''} small" data-intro="${esc(name)}">${it.introduced?'✓ Introduced':'Introduced'}</button>
+        <button class="btn danger small" data-reactnew="${esc(name)}">⚠️ Reaction</button>
         <button class="btn danger small" data-rm="${esc(name)}">Remove</button>
       </div>`;
     // Day-of-week checkboxes mapped to this week's real Mon–Sun dates.
