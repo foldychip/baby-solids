@@ -361,6 +361,24 @@ function addReaction(weekN, name){
   it.reactList.unshift({ at: stampNow(), fedISO: stampNow(), by: S.activeParent, text: txt.trim() });
   save(); render(); toast("Reaction note saved.");
 }
+/* Edit the TEXT of an existing reaction note; keeps an edited stamp. */
+function editReactionText(weekN, name, ri){
+  const it = week(weekN).intros[name]; if(!it || !it.reactList || !it.reactList[ri]) return;
+  const r = it.reactList[ri];
+  const txt = prompt("Edit this reaction / note:", r.text||"");
+  if(txt===null) return;
+  r.text = txt.trim();
+  r.editedAt = stampNow();
+  r.editedBy = S.activeParent;
+  save(); render(); toast("Note updated.");
+}
+/* Delete a reaction note. */
+function deleteReaction(weekN, name, ri){
+  const it = week(weekN).intros[name]; if(!it || !it.reactList) return;
+  if(!confirm("Delete this reaction / note?")) return;
+  it.reactList.splice(ri,1);
+  save(); render(); toast("Note deleted.");
+}
 /* Given a list of food names, return {have:[...], missing:[...]} nutrient coverage
    against the full NUTRIENTS list. Display-only, de-duplicated, ordered by NUTRIENTS. */
 function nutrientCoverage(foodNames){
@@ -677,7 +695,13 @@ function renderPlan(){
     if(it.reactList.length){
       html += `<div style="margin-top:6px">`;
       it.reactList.forEach((r,ri)=>{
-        html += `<div class="note" style="margin-top:6px;border-color:#f3cfcf;background:#fdecec;color:#7a2f28">⚠ ${esc(r.text)||'(no note)'}</div>`;
+        html += `<div class="note" style="margin-top:6px;border-color:#f3cfcf;background:#fdecec;color:#7a2f28">
+          <div>⚠ ${esc(r.text)||'(no note)'}</div>
+          ${r.editedAt?`<div class="editstamp" style="color:#9a5a2a">edited ${fmtStamp(r.editedAt)}</div>`:''}
+          <div style="margin-top:5px">
+            <button class="pencil" data-noteedit="${ri}" data-nf="${esc(name)}" style="color:#7a2f28">✏️ Edit</button>
+            <button class="pencil" data-notedel="${ri}" data-nf="${esc(name)}" style="color:#c0564b">🗑 Delete</button>
+          </div></div>`;
       });
       html += `</div>`;
     }
@@ -697,7 +721,7 @@ function wirePlan(){
   // Event delegation: ONE listener handles every tappable element, so a handler
   // can never silently fail to bind even if a later part of render hiccups.
   main.onclick = (e)=>{
-    const t = e.target.closest("[data-week],#addWeek,#addFoodBtn,[data-sugg],[data-rm],[data-intro],[data-dow],[data-reactnew],.check-box,[data-react],[data-prep],[data-prep2],[data-edit]");
+    const t = e.target.closest("[data-week],#addWeek,#addFoodBtn,[data-sugg],[data-rm],[data-intro],[data-dow],[data-reactnew],[data-noteedit],[data-notedel],.check-box,[data-react],[data-prep],[data-prep2],[data-edit]");
     if(!t) return;
     if(t.id==="addWeek"){ ensureWeek(S.weeks.length+1); S.activeWeek=S.weeks.length; save(); render(); return; }
     if(t.id==="addFoodBtn"){ currentTab="foods"; setActiveTab(); render(); toast(`Pick foods — they add to Week ${S.activeWeek}`); return; }
@@ -707,6 +731,8 @@ function wirePlan(){
     if(t.hasAttribute("data-intro")){ markIntroduced(S.activeWeek,t.dataset.intro); return; }
     if(t.hasAttribute("data-dow")){ toggleDow(S.activeWeek, t.dataset.food, +t.dataset.dow); return; }
     if(t.hasAttribute("data-reactnew")){ addReaction(S.activeWeek, t.dataset.reactnew); return; }
+    if(t.hasAttribute("data-noteedit")){ editReactionText(S.activeWeek, t.dataset.nf, +t.dataset.noteedit); return; }
+    if(t.hasAttribute("data-notedel")){ deleteReaction(S.activeWeek, t.dataset.nf, +t.dataset.notedel); return; }
     if(t.classList.contains("check-box")){ toggleCheck(+t.dataset.week,t.dataset.food,+t.dataset.day,t.dataset.item); return; }
     if(t.hasAttribute("data-react")){ logReaction(S.activeWeek,t.dataset.react,+t.dataset.rday); return; }
     if(t.hasAttribute("data-prep")){ showPrep(t.dataset.prep); return; }
