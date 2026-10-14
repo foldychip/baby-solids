@@ -826,9 +826,9 @@ function renderFoods(){
       <div class="tile-body">
         <div class="tile-name">${esc(titleCase(f.name))}</div>
         <div class="tile-group">👶 ${esc((AGE_BANDS[f.ageBand]||'~6 months').replace(/\s*\(.*\)/,''))}</div>
-        ${eaten?`<div class="tile-group" style="color:var(--green-d);font-weight:700">🍽️ Eaten ${eaten} day${eaten!==1?'s':''}</div>`:''}
+        <div class="tile-group tile-eaten" style="${eaten?'color:var(--green-d);font-weight:700':'visibility:hidden'}">🍽️ Eaten ${eaten} day${eaten!==1?'s':''}</div>
         <div class="tile-nutr">${(f.nutrients||[]).slice(0,4).map(n=>NUTRIENTS[n]||'').join(" ")}</div>
-        <button class="btn ${planned?'sec':''} small" style="width:100%;margin-top:9px" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In Week '+S.activeWeek:'➕ Add'}</button>
+        <button class="btn ${planned?'sec':''} small tile-btn" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In Week '+S.activeWeek:'➕ Add'}</button>
       </div>
     </div>`;
   });

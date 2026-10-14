@@ -56,10 +56,12 @@ h3{font-size:15px;margin:0 0 4px;font-weight:700}
 .tile-badge{background:rgba(255,255,255,.92);border-radius:10px;padding:2px 7px;font-size:10px;font-weight:700;color:var(--ink)}
 .tile-badge.allergen{background:#fdecec;color:var(--red)}
 .tile-badge.choke{background:#fff3e0;color:#b5731a}
-.tile-body{padding:10px 11px 12px}
+.tile-body{padding:10px 11px 12px;display:flex;flex-direction:column;flex:1}
 .tile-name{font-weight:700;font-size:14px;line-height:1.2}
 .tile-group{font-size:11px;color:var(--muted);margin-top:2px}
+.tile-eaten{min-height:15px}
 .tile-nutr{margin-top:6px;font-size:14px;letter-spacing:1px}
+.tile-btn{width:100%;margin-top:auto}
 
 /* big hero card (Home) */
 .hero{padding:0;overflow:hidden}
