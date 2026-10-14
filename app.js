@@ -88,6 +88,10 @@ function normalizeState(){
       if(!it.reactions || typeof it.reactions!=="object") it.reactions = {};
       if(!it.dow || typeof it.dow!=="object") it.dow = {};
       if(!Array.isArray(it.reactList)) it.reactList = [];
+      // Retire the old Day 1/2/3 model: drop legacy checks/reactions entirely
+      // (the app now records feeding by day-of-week in it.dow and notes in it.reactList).
+      it.checks = {};
+      it.reactions = {};
       it.emoji = it.emoji || "🍽️";
       it.introduced = !!it.introduced;
       // ensure every planned food has an intro entry
@@ -638,20 +642,10 @@ function renderPlan(){
         <span class="dow-n">${dn}</span><span class="dow-d">${dte.getDate()}</span></button>`;
     });
     html += `</div>`;
-    // show stamps for ticked days
+    // ticked days: edit-time only, no timestamp text (details live in the Tracker)
     const ticked = Object.keys(it.dow).filter(k=>it.dow[k]&&it.dow[k].on).map(Number).sort((a,b)=>a-b);
     if(ticked.length){
-      html += `<div style="margin-top:6px">`;
-      ticked.forEach(idx=>{
-        const rec=it.dow[idx];
-        html += `<div class="check-row" style="padding:7px 0"><div class="check-main">
-          <span class="stamp">✓ ${dowNames[idx]} ${fmtStamp(rec.fedISO)} · by ${esc(rec.by||'?')}</span>
-          <button class="pencil" data-edit="dow" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${idx}">✏️ edit time</button>
-          ${rec.editedAt?`<div class="editstamp">edited by ${esc(rec.editedBy||'?')} · ${fmtStamp(rec.editedAt)}</div>`:''}
-          <div class="check-meta">recorded ${fmtStamp(rec.at)}</div>
-        </div></div>`;
-      });
-      html += `</div>`;
+      html += `<div class="muted" style="margin-top:6px">Fed on: <b>${ticked.map(idx=>dowNames[idx]).join(", ")}</b> <span style="opacity:.7">· edit times in the Tracker</span></div>`;
     }
     // Reaction button + any logged reactions (freeform)
     it.reactList = it.reactList || []; // [{at, by, text, fedISO}]
@@ -659,12 +653,7 @@ function renderPlan(){
     if(it.reactList.length){
       html += `<div style="margin-top:6px">`;
       it.reactList.forEach((r,ri)=>{
-        html += `<div class="check-row" style="padding:7px 0"><div class="check-main">
-          <span class="stamp react">⚠ ${esc(r.by||'?')} · ${fmtStamp(r.at)}</span>
-          <button class="pencil" data-edit="reactlist" data-ew="${w.n}" data-ef="${esc(name)}" data-ek="${ri}">✏️ edit time</button>
-          ${r.editedAt?`<div class="editstamp">edited by ${esc(r.editedBy||'?')} · ${fmtStamp(r.editedAt)}</div>`:''}
-          <div class="note">${esc(r.text)||'(no note)'}</div>
-        </div></div>`;
+        html += `<div class="note" style="margin-top:6px;border-color:#f3cfcf;background:#fdecec;color:#7a2f28">⚠ ${esc(r.text)||'(no note)'}</div>`;
       });
       html += `</div>`;
     }
@@ -925,18 +914,6 @@ function activityByDay(){
       m.react=true;
       m.events.push({ fedAt:fed, at:r.at, by:r.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen,
         text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, kind:"reactlist", ekey:ri, editedAt:r.editedAt, editedBy:r.editedBy });
-    });
-    // LEGACY: old per-day checks/reactions (recovered or pre-redesign data)
-    Object.entries(it.checks||{}).forEach(([k,c])=>{
-      if(!c.at) return; const key=dk(c.at); const m=bucket(key);
-      m.foods.add(name); if(it.isAllergen) m.allergen=true;
-      const [day,itemId]=k.split(":"); const dObj=(it.days||[]).find(d=>d.day==day); const itm=dObj&&dObj.items.find(x=>x.id===itemId);
-      m.events.push({ fedAt:c.at, at:c.at, by:c.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:(itm?itm.text:itemId), react:false, week:w.n, kind:"check", ekey:k, editedAt:c.editedAt, editedBy:c.editedBy });
-    });
-    Object.entries(it.reactions||{}).forEach(([day,r])=>{
-      if(!r.at) return; const key=dk(r.at); const m=bucket(key);
-      m.react=true;
-      m.events.push({ fedAt:r.at, at:r.at, by:r.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, kind:"react", ekey:day, editedAt:r.editedAt, editedBy:r.editedBy });
     });
   }));
   return map;
