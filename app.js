@@ -538,9 +538,10 @@ function renderPlan(){
     const item = itemByName(name);
     html += `<div class="card">
       <div class="dayhead">
-        <div><h3 style="margin:0"><span class="tap-name" data-prep="${esc(name)}">${it.emoji} ${esc(name)}</span> ${it.isAllergen?'<span class="pill allergen">allergen</span>':''}
+        <div><h3 style="margin:0"><span class="tap-name" data-prep="${esc(name)}" style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${it.emoji} ${esc(titleCase(name))}</span> ${it.isAllergen?'<span class="pill allergen">allergen</span>':''}
           ${it.introduced?'<span class="pill safe">Introduced ✓</span>':''}</h3>
-          <span class="muted" data-prep2="${esc(name)}" style="cursor:pointer">👆 tap the name for prep info${item?` · ${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}`:''}</span>
+          <button class="btn sec small" data-prep2="${esc(name)}" style="width:auto;margin-top:4px">ℹ️ Tap for prep info</button>
+          ${item?`<div class="muted" style="margin-top:4px">${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}</div>`:''}
         </div>
         <button class="btn danger small" style="width:auto" data-rm="${esc(name)}">Remove</button>
       </div>
@@ -548,7 +549,9 @@ function renderPlan(){
     // 3 day watch
     it.days.forEach(d=>{
       const total=d.items.length, done=d.items.filter(x=>it.checks[`${d.day}:${x.id}`]).length;
-      html += `<details ${d.day===1?'open':''}><summary>Day ${d.day} · ${dayLabel(w.n,d.day)} <span class="muted">(${done}/${total})</span></summary>`;
+      const dayKey = `${w.n}:${esc(name)}:${d.day}`;
+      const openAttr = (S.settings.openDays && S.settings.openDays[dayKey]) ? 'open' : '';
+      html += `<details data-dkey="${dayKey}" ${openAttr}><summary>Day ${d.day} · ${dayLabel(w.n,d.day)} <span class="muted">(${done}/${total})</span></summary>`;
       d.items.forEach(itm=>{
         const c = it.checks[`${d.day}:${itm.id}`];
         html += `<div class="check-row">
@@ -600,6 +603,11 @@ function wirePlan(){
   };
   const sc = document.getElementById("suggCard");
   if(sc) sc.ontoggle = ()=>{ S.settings.suggOpen = sc.open; saveLocal(); };
+  // Remember which Day blocks the user opens, so a check-off never auto-collapses them.
+  S.settings.openDays = S.settings.openDays || {};
+  main.querySelectorAll("details[data-dkey]").forEach(dt=>{
+    dt.ontoggle = ()=>{ S.settings.openDays[dt.dataset.dkey] = dt.open; saveLocal(); };
+  });
 }
 
 /* build try-next suggestions from tolerated groups, excluding already-planned */

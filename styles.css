@@ -145,6 +145,6 @@ code{background:#f0eef6;padding:1px 5px;border-radius:4px;font-size:12px}
 .cal-cell.sel .dot{box-shadow:0 0 0 1px #fff}
 .cal-dots{display:flex;gap:3px;height:7px;align-items:center}
 .dot{width:6px;height:6px;border-radius:50%;display:inline-block}
-.dot.blue{background:#3d6fd0}.dot.orange{background:#e0772f}.dot.green{background:#4a9c5d}
+.dot.blue{background:#4a9c5d}.dot.orange{background:#e0b020}.dot.green{background:#c0564b}
 .cal-legend{display:flex;gap:16px;justify-content:center;margin-top:12px;font-size:12px;color:var(--muted)}
 .cal-legend span{display:flex;align-items:center;gap:5px}
