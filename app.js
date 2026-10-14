@@ -359,6 +359,18 @@ function addReaction(weekN, name){
   it.reactList.unshift({ at: stampNow(), fedISO: stampNow(), by: S.activeParent, text: txt.trim() });
   save(); render(); toast("Reaction note saved.");
 }
+/* Given a list of food names, return {have:[...], missing:[...]} nutrient coverage
+   against the full NUTRIENTS list. Display-only, de-duplicated, ordered by NUTRIENTS. */
+function nutrientCoverage(foodNames){
+  const have = new Set();
+  (foodNames||[]).forEach(nm=>{ const it=itemByName(nm); if(it&&it.nutrients) it.nutrients.forEach(n=>have.add(n)); });
+  const all = Object.keys(NUTRIENTS);
+  return { have: all.filter(n=>have.has(n)), missing: all.filter(n=>!have.has(n)) };
+}
+function nutrPills(list, dim){
+  if(!list.length) return `<span class="muted">—</span>`;
+  return list.map(n=>`<span class="pill" ${dim?'style="opacity:.55"':''}>${NUTRIENTS[n]||''} ${esc(n)}</span>`).join("");
+}
 /* the groups the baby has tried — introduced OR started (so suggestions appear sooner) */
 function triedGroups(){
   const groups = new Set();
@@ -591,6 +603,16 @@ function renderPlan(){
     html += `<p class="muted" style="margin-top:10px">No foods yet for this week.${okCount?' See <b>Foods to try next</b> below — suggestions based on what '+esc(S.baby.name)+' already tolerates.':' Add from the <b>Foods</b> or <b>Allergens</b> tab, or tap the button above.'}</p>`;
   }
   html += `</div>`;
+
+  // nutrient coverage for this week's foods
+  {
+    const cov = nutrientCoverage(w.foods||[]);
+    html += `<div class="card"><h3>🥗 Nutrient coverage this week</h3>
+      <div style="margin-top:6px"><div class="check-meta" style="font-weight:600;color:var(--green-d);margin-bottom:3px">✓ Provided by this week's foods</div>${nutrPills(cov.have)}</div>
+      <div style="margin-top:10px"><div class="check-meta" style="font-weight:600;color:var(--red);margin-bottom:3px">◦ Not yet covered this week</div>${nutrPills(cov.missing, true)}</div>
+      <div class="note" style="margin-top:8px">A quick variety check — not a strict nutrition target. Breast milk/formula still provides most nutrition at this age. Confirm any concerns with your pediatrician.</div>
+    </div>`;
+  }
 
   // try-next suggestions based on what's been tried (cross-reactivity-informed)
   const sugg = buildSuggestions();
@@ -985,6 +1007,12 @@ function renderTracker(){
       </div>`;
     });
     html += `</div>`;
+    // nutrient summary for the day
+    {
+      const cov = nutrientCoverage(foodsThatDay);
+      html += `<div style="margin-top:12px"><div class="check-meta" style="font-weight:600;color:var(--green-d);margin-bottom:3px">🥗 Nutrients provided today</div>${nutrPills(cov.have)}
+        <div class="check-meta" style="font-weight:600;color:var(--red);margin:10px 0 3px">◦ Not provided today</div>${nutrPills(cov.missing, true)}</div>`;
+    }
     // detailed events: sorted by feeding time; show feeding time + record timestamp
     html += `<div style="margin-top:12px">`;
     sel.events.sort((a,b)=>(a.fedAt||a.at||"").localeCompare(b.fedAt||b.at||"")).forEach(e=>{
