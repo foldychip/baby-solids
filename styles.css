@@ -72,6 +72,8 @@ h3{font-size:15px;margin:0 0 4px;font-weight:700}
 .btn.small{width:auto;padding:9px 13px;font-size:13px}
 .btn:active{transform:scale(.98)}
 .row{display:flex;gap:8px}.row>*{flex:1}
+.btn-row{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 4px}
+.btn-row .btn{width:auto;flex:0 0 auto}
 
 input,select,textarea{width:100%;padding:11px;border:1.5px solid var(--line);border-radius:11px;font-size:16px;font-family:inherit;background:#fff;color:var(--ink)}
 label{display:block;font-size:13px;font-weight:600;margin:10px 0 4px}

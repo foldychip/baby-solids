@@ -645,15 +645,16 @@ function renderPlan(){
     const it = w.intros[name]; if(!it) return;
     const item = itemByName(name);
     html += `<div class="card">
-      <div class="dayhead">
-        <div><h3 style="margin:0"><span class="tap-name" data-prep="${esc(name)}" style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${it.emoji} ${esc(titleCase(name))}</span> ${it.isAllergen?'<span class="pill allergen">allergen</span>':''}
-          ${it.introduced?'<span class="pill safe">Introduced ✓</span>':''}</h3>
-          <button class="btn sec small" data-prep2="${esc(name)}" style="width:auto;margin-top:4px">ℹ️ Tap for prep info</button>
-          ${item?`<div class="muted" style="margin-top:4px">${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}</div>`:''}
-        </div>
-        <button class="btn danger small" style="width:auto" data-rm="${esc(name)}">Remove</button>
+      <div><h3 style="margin:0"><span class="tap-name" data-prep="${esc(name)}" style="text-decoration:underline;text-decoration-style:dotted;text-underline-offset:3px">${it.emoji} ${esc(titleCase(name))}</span> ${it.isAllergen?'<span class="pill allergen">Allergen</span>':''}
+        ${it.introduced?'<span class="pill safe">Introduced ✓</span>':''}</h3>
+        ${item?`<div class="muted" style="margin-top:4px">${(item.nutrients||[]).map(n=>`${NUTRIENTS[n]||''} ${n}`).join(" · ")}</div>`:''}
       </div>
-      <button class="btn ${it.introduced?'sec':''} small" style="margin-bottom:8px" data-intro="${esc(name)}">${it.introduced?'✓ Introduced (tap to undo)':'Mark introduced ✓'}</button>`;
+      <div class="btn-row">
+        <button class="btn sec small" data-prep2="${esc(name)}">ℹ️ Prep Info</button>
+        <button class="btn ${it.introduced?'sec':''} small" data-intro="${esc(name)}">${it.introduced?'✓ Introduced (Tap To Undo)':'Mark Introduced ✓'}</button>
+        <button class="btn danger small" data-reactnew="${esc(name)}">⚠️ Reaction / Note</button>
+        <button class="btn danger small" data-rm="${esc(name)}">Remove</button>
+      </div>`;
     // Day-of-week checkboxes mapped to this week's real Mon–Sun dates.
     // A ticked day stores { on:true, fedISO, at, by } so the Tracker plots the FEEDING day.
     it.dow = it.dow || {}; // { 0..6 : {on, fedISO, at, by, editedAt, editedBy} }  (0=Sun)
@@ -671,9 +672,8 @@ function renderPlan(){
     if(ticked.length){
       html += `<div class="muted" style="margin-top:6px">Fed on: <b>${ticked.map(idx=>dowNames[idx]).join(", ")}</b> <span style="opacity:.7">· edit times in the Tracker</span></div>`;
     }
-    // Reaction button + any logged reactions (freeform)
+    // Logged reactions (freeform). The Reaction / Note button is in the top row.
     it.reactList = it.reactList || []; // [{at, by, text, fedISO}]
-    html += `<button class="btn danger small" style="width:auto;margin-top:8px" data-reactnew="${esc(name)}">⚠️ Reaction / note</button>`;
     if(it.reactList.length){
       html += `<div style="margin-top:6px">`;
       it.reactList.forEach((r,ri)=>{
