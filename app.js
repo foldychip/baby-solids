@@ -418,6 +418,17 @@ function nutrPills(list, dim){
   if(!list.length) return `<span class="muted">—</span>`;
   return list.map(n=>`<span class="pill" ${dim?'style="opacity:.55"':''}>${NUTRIENTS[n]||''} ${esc(n)}</span>`).join("");
 }
+/* Shared 3-column nutrient grid: Vitamins A–E col 1, rest alphabetical cols 2–3.
+   `have` is a Set of covered nutrient names; ✓ green = covered, ○ grey = not. */
+function nutrGridHtml(have){
+  const col1 = ["Vitamin A","Vitamin C","Vitamin D","Vitamin E","B vitamins"];
+  const rest = Object.keys(NUTRIENTS).filter(n=>!col1.includes(n)).sort((a,b)=>a.localeCompare(b));
+  const col2 = rest.slice(0,5), col3 = rest.slice(5,10);
+  const cell = n=>`<div class="nutr-cell ${have.has(n)?'on':''}">${have.has(n)?'✓':'○'} ${NUTRIENTS[n]||''} ${esc(n)}</div>`;
+  const colHtml = arr=>`<div class="nutr-col">${arr.map(cell).join("")}</div>`;
+  return `<p class="muted" style="margin:6px 0 8px"><span style="color:var(--green-d);font-weight:700">✓ green</span> = covered · <span style="opacity:.6">○ grey</span> = not covered</p>
+    <div class="nutr-grid">${colHtml(col1)}${colHtml(col2)}${colHtml(col3)}</div>`;
+}
 /* the groups the baby has tried — introduced OR started (so suggestions appear sooner) */
 function triedGroups(){
   const groups = new Set();
@@ -670,16 +681,9 @@ function renderPlan(){
   // nutrient coverage for this week's foods
   {
     const have = new Set(nutrientCoverage(w.foods||[]).have);
-    // Column 1: Vitamins A–E (A, C, D, E, then B vitamins). Columns 2–3: the rest, alphabetical.
-    const col1 = ["Vitamin A","Vitamin C","Vitamin D","Vitamin E","B vitamins"];
-    const rest = Object.keys(NUTRIENTS).filter(n=>!col1.includes(n)).sort((a,b)=>a.localeCompare(b));
-    const col2 = rest.slice(0,5), col3 = rest.slice(5,10);
-    const cell = n=>`<div class="nutr-cell ${have.has(n)?'on':''}">${have.has(n)?'✓':'○'} ${NUTRIENTS[n]||''} ${esc(n)}</div>`;
-    const colHtml = arr=>`<div class="nutr-col">${arr.map(cell).join("")}</div>`;
     const nOpen = S.settings.nutrOpen!==false;
     html += `<details class="card" id="nutrCard" ${nOpen?'open':''}><summary style="font-weight:700;font-size:15px;cursor:pointer">🥗 Nutrient coverage this week</summary>
-      <p class="muted" style="margin:6px 0 8px"><span style="color:var(--green-d);font-weight:700">✓ green</span> = covered · <span style="opacity:.6">○ grey</span> = not yet covered</p>
-      <div class="nutr-grid">${colHtml(col1)}${colHtml(col2)}${colHtml(col3)}</div>
+      ${nutrGridHtml(have)}
       <div class="note" style="margin-top:10px">A quick variety check — not a strict nutrition target. Breast milk/formula still provides most nutrition at this age. Confirm any concerns with your pediatrician.</div>
     </details>`;
   }
@@ -1089,9 +1093,8 @@ function renderTracker(){
     html += `</div>`;
     // nutrient summary for the day
     {
-      const cov = nutrientCoverage(foodsThatDay);
-      html += `<div style="margin-top:12px"><div class="check-meta" style="font-weight:600;color:var(--green-d);margin-bottom:3px">🥗 Nutrients provided today</div>${nutrPills(cov.have)}
-        <div class="check-meta" style="font-weight:600;color:var(--red);margin:10px 0 3px">◦ Not provided today</div>${nutrPills(cov.missing, true)}</div>`;
+      const have = new Set(nutrientCoverage(foodsThatDay).have);
+      html += `<div style="margin-top:12px"><div style="font-weight:700;font-size:15px;margin-bottom:2px">🥗 Nutrient coverage today</div>${nutrGridHtml(have)}</div>`;
     }
     // detailed events: sorted by feeding time; show feeding time + record timestamp
     html += `<div style="margin-top:12px">`;
