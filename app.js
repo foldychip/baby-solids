@@ -162,6 +162,8 @@ function toast(msg){
   t.textContent = msg; t.classList.add("show"); clearTimeout(t._h); t._h = setTimeout(()=>t.classList.remove("show"), 2600);
 }
 function esc(s){ return String(s==null?"":s).replace(/[&<>"']/g, m=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[m])); }
+/* display-only: capitalize each word; keep stored names unchanged */
+function titleCase(s){ return String(s==null?"":s).replace(/\b([a-z])/g, m=>m.toUpperCase()); }
 
 /* ---------------- modal / popup ---------------- */
 function openModal(innerHtml, centered){
@@ -193,7 +195,7 @@ function showPrep(name){
     : `<b>Age</b><span>${esc(it.ageText||'')}</span><b>Temp</b><span>${esc(it.temp)}</span><b>Amount</b><span>${esc(it.amount)}</span><b>Tips</b><span>${esc(it.tips)}</span>`;
   openModal(`
     <div class="hero-img" style="height:120px;border-radius:14px;font-size:62px;margin:4px 0 12px">${it.emoji}</div>
-    <h3>${esc(it.name)} ${it.isAllergen?'<span class="pill allergen">⚠ allergen</span>':`<span class="pill safe">${esc(it.group)}</span>`} ${it.choke?'<span class="pill allergen">⚠ choking care</span>':''}</h3>
+    <h3>${esc(titleCase(it.name))} ${it.isAllergen?'<span class="pill allergen">⚠ allergen</span>':`<span class="pill safe">${esc(it.group)}</span>`} ${it.choke?'<span class="pill allergen">⚠ choking care</span>':''}</h3>
     <div class="muted" style="margin:2px 0 8px">👶 ${esc(AGE_BANDS[it.ageBand]||'~6 months')}</div>
     <div style="margin:6px 0 10px">${nutr}</div>
     <div class="food-grid">${primary}</div>
@@ -385,6 +387,8 @@ let foodSearch = "";           // search box text
 let foodSort = "default";      // "default" | "az"
 let foodAgeBand = "";          // "" | 6m | 6-9m | 9-12m | 12m+
 let foodShowAllergens = true;  // include allergens in the Foods list
+let trackerMonthISO = "";      // first-of-month anchor for the Tracker calendar ("" = current)
+let trackerSelDayISO = "";     // selected day in the Tracker calendar
 
 function fillHeader(){
   const nm=document.getElementById("babyNameTop"); if(nm) nm.textContent = S.baby.name || "Baby";
@@ -664,7 +668,7 @@ function renderFoods(){
         </div>
       </div>
       <div class="tile-body">
-        <div class="tile-name">${esc(f.name)}</div>
+        <div class="tile-name">${esc(titleCase(f.name))}</div>
         <div class="tile-group">👶 ${esc((AGE_BANDS[f.ageBand]||'~6 months').replace(/\s*\(.*\)/,''))}</div>
         <div class="tile-nutr">${(f.nutrients||[]).slice(0,4).map(n=>NUTRIENTS[n]||'').join(" ")}</div>
         <button class="btn ${planned?'sec':''} small" style="width:100%;margin-top:9px" data-food="${esc(f.name)}" data-emoji="${f.emoji}" data-fa="${f.isAllergen?1:0}">${planned?'✓ In plan':'➕ Add'}</button>
@@ -785,56 +789,120 @@ function renderAllergens(){
   document.querySelectorAll("[data-all]").forEach(b=>b.onclick=()=>{ addFoodToWeek(S.activeWeek,b.dataset.all,b.dataset.emoji,true); render(); });
 }
 
-/* ---------- LOG (summarized per food) ---------- */
-function renderLog(){
-  let html = `<div class="card"><h2>📈 Tracker</h2><p class="muted">One summary per food, newest activity first — every timestamp and who logged it, folded in.</p></div>`;
-  // gather per-food activity across all weeks
-  const byFood = {};
-  S.weeks.forEach(w=>{
-    Object.entries(w.intros||{}).forEach(([name,it])=>{
-      const key = name;
-      if(!byFood[key]) byFood[key] = { name, emoji:it.emoji, isAllergen:it.isAllergen, group:(itemByName(name)||{}).group, events:[], introduced:false, weeks:new Set() };
-      byFood[key].weeks.add(w.n);
-      if(it.introduced) byFood[key].introduced = true;
-      Object.entries(it.checks||{}).forEach(([k,c])=>{
-        const [day,itemId]=k.split(":"); const dObj=it.days.find(d=>d.day==day); const itm=dObj&&dObj.items.find(x=>x.id===itemId);
-        byFood[key].events.push({ at:c.at, by:c.by, text:(itm?itm.text:itemId), react:false, week:w.n, day,
-          food:name, kind:"check", ekey:k, editedAt:c.editedAt, editedBy:c.editedBy });
-      });
-      Object.entries(it.reactions||{}).forEach(([day,r])=>{
-        byFood[key].events.push({ at:r.at, by:r.by, text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, day,
-          food:name, kind:"react", ekey:day, editedAt:r.editedAt, editedBy:r.editedBy });
-      });
+/* ---------- TRACKER (calendar) ---------- */
+/* Collect every logged event, keyed by local calendar day (YYYY-MM-DD). */
+function activityByDay(){
+  const map = {}; // dayKey -> { foods:Set, allergen:bool, react:bool, events:[] }
+  const dk = iso => { const d=new Date(iso); const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+  S.weeks.forEach(w=> Object.entries(w.intros||{}).forEach(([name,it])=>{
+    Object.entries(it.checks||{}).forEach(([k,c])=>{
+      if(!c.at) return; const key=dk(c.at);
+      (map[key] = map[key] || {foods:new Set(),allergen:false,react:false,events:[]});
+      map[key].foods.add(name); if(it.isAllergen) map[key].allergen=true;
+      const [day,itemId]=k.split(":"); const dObj=it.days.find(d=>d.day==day); const itm=dObj&&dObj.items.find(x=>x.id===itemId);
+      map[key].events.push({ at:c.at, by:c.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:(itm?itm.text:itemId), react:false, week:w.n, day, kind:"check", ekey:k, editedAt:c.editedAt, editedBy:c.editedBy });
     });
-  });
-  const foods = Object.values(byFood).map(f=>{
-    f.events.sort((a,b)=>(b.at||"").localeCompare(a.at||""));
-    f.last = f.events[0] ? f.events[0].at : "";
-    return f;
-  }).filter(f=>f.events.length).sort((a,b)=>(b.last||"").localeCompare(a.last||""));
+    Object.entries(it.reactions||{}).forEach(([day,r])=>{
+      if(!r.at) return; const key=dk(r.at);
+      (map[key] = map[key] || {foods:new Set(),allergen:false,react:false,events:[]});
+      map[key].react=true;
+      map[key].events.push({ at:r.at, by:r.by, food:name, emoji:it.emoji, isAllergen:it.isAllergen, text:"⚠ Reaction: "+(r.text||""), react:true, week:w.n, day, kind:"react", ekey:day, editedAt:r.editedAt, editedBy:r.editedBy });
+    });
+  }));
+  return map;
+}
 
-  if(!foods.length){ html += `<div class="card"><p class="muted">Nothing logged yet. Check items off in the Weekly Plan.</p></div>`; main.innerHTML=html; return; }
+function renderLog(){ renderTracker(); }
+function renderTracker(){
+  const byDay = activityByDay();
+  const today = new Date(); today.setHours(0,0,0,0);
+  const dkOf = d => { const p=n=>String(n).padStart(2,"0"); return `${d.getFullYear()}-${p(d.getMonth()+1)}-${p(d.getDate())}`; };
+  const anchor = trackerMonthISO ? new Date(trackerMonthISO) : new Date(today.getFullYear(), today.getMonth(), 1);
+  anchor.setDate(1); anchor.setHours(0,0,0,0);
+  const monthName = anchor.toLocaleDateString([], {month:"long", year:"numeric"});
 
-  foods.forEach(f=>{
-    const checks = f.events.filter(e=>!e.react).length;
-    const reacts = f.events.filter(e=>e.react).length;
-    const people = [...new Set(f.events.map(e=>e.by))];
-    html += `<div class="card"><details ${foods.length<=2?'open':''}>
-      <summary>${f.emoji} ${esc(f.name)} ${f.introduced?'<span class="pill safe">Introduced ✓</span>':''} ${reacts?'<span class="pill allergen">'+reacts+' reaction note'+(reacts>1?'s':'')+'</span>':''}
-        <span class="muted">— ${checks} check${checks!==1?'s':''}, last ${fmtStamp(f.last)}</span></summary>
-      <div class="check-meta" style="margin:6px 0">Week${f.weeks.size>1?'s':''} ${[...f.weeks].sort((a,b)=>a-b).join(", ")} · logged by ${people.map(esc).join(", ")}</div>`;
-    f.events.forEach(e=>{
+  // grid: start on Sunday
+  const first = new Date(anchor); const startOffset = first.getDay(); // 0=Sun
+  const gridStart = new Date(first); gridStart.setDate(1 - startOffset);
+
+  let html = `<div class="card"><h2>📈 Tracker</h2>
+    <p class="muted">Tap any day to see what ${esc(S.baby.name)} tried. Dots mark logged activity.</p>
+    <div class="dayhead" style="margin:10px 0 6px">
+      <button class="btn sec small" style="width:auto" data-mon="prev">‹</button>
+      <b>${monthName}</b>
+      <button class="btn sec small" style="width:auto" data-mon="next">›</button>
+    </div>
+    <div class="cal-grid cal-dow">${["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=>`<div class="cal-dow-c">${d}</div>`).join("")}</div>
+    <div class="cal-grid">`;
+  for(let i=0;i<42;i++){
+    const d = new Date(gridStart); d.setDate(gridStart.getDate()+i);
+    const inMonth = d.getMonth()===anchor.getMonth();
+    const key = dkOf(d);
+    const info = byDay[key];
+    const isToday = d.getTime()===today.getTime();
+    const isSel = trackerSelDayISO===key;
+    let dots = "";
+    if(info){
+      if(info.foods.size) dots += `<i class="dot blue"></i>`;
+      if(info.allergen) dots += `<i class="dot orange"></i>`;
+      if(info.react) dots += `<i class="dot green"></i>`;
+    }
+    html += `<button class="cal-cell ${inMonth?'':'dim'} ${isToday?'today':''} ${isSel?'sel':''}" data-day="${key}">
+      <span>${d.getDate()}</span><span class="cal-dots">${dots}</span></button>`;
+  }
+  html += `</div>
+    <div class="cal-legend"><span><i class="dot blue"></i> Foods</span><span><i class="dot orange"></i> Allergens</span><span><i class="dot green"></i> Notes</span></div>
+  </div>`;
+
+  // selected day detail
+  const selKey = trackerSelDayISO || dkOf(today);
+  const sel = byDay[selKey];
+  const selDate = new Date(selKey+"T00:00:00");
+  const selLabel = selDate.toDateString()===today.toDateString() ? "Today" : selDate.toLocaleDateString([], {weekday:"long", month:"short", day:"numeric"});
+  html += `<div class="card"><h2 style="margin-bottom:4px">Foods Tried ${esc(selLabel)}</h2>`;
+  if(!sel){
+    html += `<p class="muted">Nothing logged on this day. Tap a dotted day, or check foods off in the Plan.</p>`;
+  } else {
+    const foodsThatDay = [...sel.foods];
+    html += `<div class="tiles">`;
+    foodsThatDay.forEach(name=>{
+      const it = itemByName(name) || {};
+      const evs = sel.events.filter(e=>e.food===name);
+      const firstTime = evs.map(e=>e.at).sort()[0];
+      html += `<div class="tile" data-prep="${esc(name)}">
+        <div class="tile-img">${it.emoji||"🍽️"}
+          <div class="tile-badges"><span class="tile-badge ${it.isAllergen?'allergen':''}">${it.isAllergen?'⚠ allergen':esc(it.group||'food')}</span></div>
+        </div>
+        <div class="tile-body"><div class="tile-name">${esc(titleCase(name))}</div>
+          <div class="tile-group">${fmtStamp(firstTime)}</div></div>
+      </div>`;
+    });
+    html += `</div>`;
+    // detailed events with edit-time
+    html += `<div style="margin-top:12px">`;
+    sel.events.sort((a,b)=>(a.at||"").localeCompare(b.at||"")).forEach(e=>{
       html += `<div class="check-row"><div class="check-main">
-        <div class="check-title" style="font-weight:500">${esc(e.text)}</div>
-        <span class="stamp ${e.react?'react':''}">${esc(e.by)} · W${e.week} D${e.day} · ${fmtStamp(e.at)}</span>
+        <div class="check-title" style="font-weight:500">${e.emoji} ${esc(titleCase(e.food))} — ${esc(e.text)}</div>
+        <span class="stamp ${e.react?'react':''}">${esc(e.by)} · ${fmtStamp(e.at)}</span>
         <button class="pencil" data-edit="${e.kind}" data-ew="${e.week}" data-ef="${esc(e.food)}" data-ek="${esc(e.ekey)}">✏️ edit time</button>
         ${e.editedAt?`<div class="editstamp">edited by ${esc(e.editedBy||'?')} · ${fmtStamp(e.editedAt)}</div>`:''}
       </div></div>`;
     });
-    html += `</details></div>`;
-  });
+    html += `</div>`;
+  }
+  html += `</div>`;
+
   main.innerHTML = html;
-  document.querySelectorAll("[data-edit]").forEach(b=>b.onclick=()=>editEventTime(+b.dataset.ew, b.dataset.ef, b.dataset.edit, b.dataset.ek));
+  main.onclick = (e)=>{
+    const mon = e.target.closest("[data-mon]");
+    if(mon){ const a=new Date(anchor); a.setMonth(a.getMonth()+(mon.dataset.mon==="next"?1:-1)); trackerMonthISO=a.toISOString(); render(); return; }
+    const cell = e.target.closest("[data-day]");
+    if(cell){ trackerSelDayISO = cell.dataset.day; render(); return; }
+    const pen = e.target.closest("[data-edit]");
+    if(pen){ editEventTime(+pen.dataset.ew, pen.dataset.ef, pen.dataset.edit, pen.dataset.ek); return; }
+    const tile = e.target.closest("[data-prep]");
+    if(tile){ showPrep(tile.dataset.prep); return; }
+  };
 }
 
 /* ---------- SETTINGS ---------- */
