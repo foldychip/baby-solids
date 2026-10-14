@@ -117,6 +117,36 @@ function saveLocal(){
 }
 async function save(){ saveLocal(); if(S.cloud.url){ await cloudPush(); } }
 
+/* ---------------- backups (local snapshots) ---------------- */
+const BK_KEY = "littleBites.backups.v1";
+const BK_MAX = 15;
+function loadBackups(){ try{ return JSON.parse(localStorage.getItem(BK_KEY)||"[]"); }catch(e){ return []; } }
+function saveBackups(list){ try{ localStorage.setItem(BK_KEY, JSON.stringify(list.slice(0,BK_MAX))); }catch(e){} }
+/* Snapshot the CURRENT in-memory state. reason is a short label. Skips trivial/empty states unless forced. */
+function makeBackup(reason, force){
+  try{
+    const snap = JSON.parse(JSON.stringify(S));
+    const foods = (S.weeks||[]).reduce((a,w)=>a+Object.keys(w.intros||{}).length,0);
+    if(!force && foods===0) return; // nothing worth keeping
+    const list = loadBackups();
+    // avoid duplicate back-to-back snapshots of identical data
+    const body = JSON.stringify(snap);
+    if(list[0] && JSON.stringify(list[0].data)===body) return;
+    list.unshift({ at: new Date().toISOString(), reason: reason||"auto", foods, data: snap });
+    saveBackups(list);
+  }catch(e){ console.error("backup error:", e); }
+}
+function restoreBackup(idx){
+  const list = loadBackups();
+  const b = list[idx]; if(!b) return;
+  makeBackup("before restore", true);              // snapshot current first, so revert is itself undoable
+  const url = S.cloud.url;                          // keep this device's sheet link
+  S = Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), b.data);
+  S.cloud.url = url;
+  migrate(); normalizeState(); saveLocal();
+  render(); toast("Reverted to the "+fmtStamp(b.at)+" backup.");
+}
+
 /* ---------------- cloud (Google Sheets via Apps Script) ---------------- */
 function setSyncLabel(state, ok){
   const el = document.getElementById("syncState"); const chip = document.getElementById("syncBtn");
@@ -139,6 +169,7 @@ async function cloudPull(){
     const res = await fetch(S.cloud.url + "?action=load", { method:"GET" });
     const json = await res.json();
     if(json && json.data){
+      makeBackup("before loading from Sheet");   // guard: snapshot what's on this device first
       const url = S.cloud.url;
       S = Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), json.data);
       S.cloud.url = url; migrate(); normalizeState(); saveLocal(); render();
@@ -955,8 +986,27 @@ function renderSettings(){
 
   html += `<div class="card"><h2>Data</h2>
     <button class="btn sec small" id="exportBtn">⬇️ Export backup file</button>
-    <button class="btn danger small" style="margin-top:8px" id="resetBtn">Reset everything</button>
+    <label style="margin-top:10px">Restore from a backup file</label>
+    <input type="file" id="importFile" accept="application/json,.json">
+    <button class="btn danger small" style="margin-top:10px" id="resetBtn">Reset everything</button>
   </div>`;
+
+  // ---- Backups (local snapshots) ----
+  const backups = loadBackups();
+  html += `<div class="card"><h2>⏱️ Backups</h2>
+    <p class="muted">The app automatically snapshots your data before any cloud load or overwrite — so a bad sync can be undone. Tap <b>Revert</b> to restore one (your current data is backed up first, so revert is itself undoable).</p>
+    <button class="btn sec small" id="backupNow" style="margin-bottom:8px">📸 Back up now</button>`;
+  if(!backups.length){
+    html += `<p class="muted">No backups yet.</p>`;
+  } else {
+    backups.forEach((b,i)=>{
+      html += `<div class="listrow"><div class="check-main">
+        <div class="check-title" style="font-weight:600">${fmtStamp(b.at)}</div>
+        <div class="check-meta">${esc(b.reason)} · ${b.foods} food${b.foods!==1?'s':''} logged</div>
+      </div><button class="btn sec small" style="flex:0 0 auto" data-revert="${i}">Revert</button></div>`;
+    });
+  }
+  html += `</div>`;
 
   main.innerHTML = html;
   document.getElementById("saveProfile").onclick=()=>{
@@ -969,13 +1019,43 @@ function renderSettings(){
     save(); toast("Saved"); render();
   };
   document.querySelectorAll("[data-go]").forEach(x=>x.onclick=()=>{ currentTab=x.dataset.go; setActiveTab(); render(); });
-  document.getElementById("saveCloud").onclick=async()=>{ S.cloud.url=document.getElementById("cloudUrl").value.trim(); saveLocal();
-    if(S.cloud.url){ setSyncLabel("Connecting…"); await cloudPush(); toast("Connected."); } else setSyncLabel("Local only",false); render(); };
+  document.getElementById("saveCloud").onclick=async()=>{
+    const newUrl=document.getElementById("cloudUrl").value.trim();
+    S.cloud.url=newUrl; saveLocal();
+    if(!newUrl){ setSyncLabel("Local only",false); render(); return; }
+    makeBackup("before connecting a Sheet");   // always snapshot this device first
+    const localFoods=(S.weeks||[]).reduce((a,w)=>a+Object.keys(w.intros||{}).length,0);
+    setSyncLabel("Connecting…");
+    // peek at the Sheet to see if it already has data
+    let sheetHas=false;
+    try{ const res=await fetch(newUrl+"?action=load",{method:"GET"}); const j=await res.json();
+      sheetHas = !!(j && j.data && (j.data.weeks||j.data.intros)); }catch(e){}
+    if(localFoods>0 && sheetHas){
+      const useSheet = confirm("Both this device AND the Google Sheet already have data.\n\nOK = use the SHEET's data here (this device's data is backed up first).\nCancel = keep THIS device's data and overwrite the Sheet.");
+      if(useSheet){ await cloudPull(); } else { await cloudPush(); toast("Kept this device's data; updated the Sheet."); }
+    } else if(sheetHas){
+      await cloudPull();   // only the sheet has data → load it
+    } else {
+      await cloudPush(); toast("Connected — this device's data is now in the Sheet.");
+    }
+    render();
+  };
   document.getElementById("pullCloud").onclick=cloudPull;
   document.getElementById("pushCloud").onclick=async()=>{ await cloudPush(); toast("Saved to Sheet."); };
   { const tb=document.getElementById("tutBtn"); if(tb) tb.onclick=showSetupTutorial; }
   document.getElementById("exportBtn").onclick=()=>{ const blob=new Blob([JSON.stringify(S,null,2)],{type:"application/json"});
     const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="baby-solids-backup.json"; a.click(); };
+  { const bn=document.getElementById("backupNow"); if(bn) bn.onclick=()=>{ makeBackup("manual", true); render(); toast("Backed up."); }; }
+  document.querySelectorAll("[data-revert]").forEach(b=>b.onclick=()=>{ if(confirm("Revert to this backup? Your current data is snapshotted first, so you can undo this.")) restoreBackup(+b.dataset.revert); });
+  { const imp=document.getElementById("importFile"); if(imp) imp.onchange=(e)=>{
+      const file=e.target.files && e.target.files[0]; if(!file) return;
+      const r=new FileReader(); r.onload=()=>{ try{
+        const data=JSON.parse(r.result); makeBackup("before importing a file", true);
+        const url=S.cloud.url; S=Object.assign(JSON.parse(JSON.stringify(DEFAULT_STATE)), data); S.cloud.url=url;
+        migrate(); normalizeState(); saveLocal(); render(); toast("Imported backup file.");
+      }catch(err){ toast("That file couldn't be read as a backup."); } };
+      r.readAsText(file);
+    }; }
   document.getElementById("resetBtn").onclick=()=>{ if(confirm("Erase all tracked data on this device? (Your Google Sheet copy stays unless you overwrite it.)")){
     S=JSON.parse(JSON.stringify(DEFAULT_STATE)); migrate(); saveLocal(); render(); toast("Reset."); } };
 }
