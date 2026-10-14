@@ -634,8 +634,10 @@ function renderFoods(){
   const nutOpts = Object.keys(NUTRIENTS).map(n=>`<option value="${n}" ${foodFilterNutrient===n?'selected':''}>${NUTRIENTS[n]} ${n}</option>`).join("");
   const ageOpts = Object.keys(AGE_BANDS).map(a=>`<option value="${a}" ${foodAgeBand===a?'selected':''}>${esc(AGE_BANDS[a])}</option>`).join("");
   let html = `<div class="card"><h2>Foods</h2>
-    <p class="muted">Tap a tile for prep info &amp; "More Details", or use <b>Add</b> to put a food into <b>Week ${S.activeWeek}</b> of your plan. Age guidance is general — your pediatrician's advice wins.</p>
-    <label>Search</label>
+    <p class="muted">Tap a tile for prep info &amp; "More Details", or use <b>Add</b> to put a food into the week you pick below.</p>
+    <label>Add foods to</label>
+    <select id="weekPick">${S.weeks.map(wk=>`<option value="${wk.n}" ${wk.n===S.activeWeek?'selected':''}>Week ${wk.n} · ${weekRangeLabel(wk.n)}</option>`).join("")}</select>
+    <label style="margin-top:10px">Search</label>
     <input id="foodSearch" placeholder="Search foods (e.g. banana, iron, nut)" value="${esc(foodSearch)}">
     <div class="row" style="margin-top:10px">
       <div><label style="margin-top:0">Age group</label>
@@ -688,6 +690,7 @@ function renderFoods(){
   main.innerHTML = html;
 
   const si = document.getElementById("foodSearch");
+  { const wp=document.getElementById("weekPick"); if(wp) wp.onchange=(e)=>{ S.activeWeek=+e.target.value; saveLocal(); toast(`Adding to Week ${S.activeWeek}`); render(); }; }
   si.oninput = (e)=>{ foodSearch=e.target.value; const pos=e.target.selectionStart; render(); const n=document.getElementById("foodSearch"); if(n){ n.focus(); n.setSelectionRange(pos,pos); } };
   document.getElementById("ageFilter").onchange = (e)=>{ foodAgeBand=e.target.value; render(); };
   document.getElementById("nutFilter").onchange = (e)=>{ foodFilterNutrient=e.target.value; render(); };
