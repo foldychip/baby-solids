@@ -551,13 +551,18 @@ function renderHome(){
   const totalFoods = FOODS.length + ALLERGENS.length;
   const pct = Math.min(100, Math.round((introduced.length / 12) * 100)); // ~12 as an early milestone
 
-  // most recent activity across all weeks
-  const recent = [];
+  // most recent feedings across all weeks (from the day-of-week ticks)
+  const recentMap = {}; // name -> { name, emoji, isAllergen, group, lastFed, count }
   S.weeks.forEach(w=> Object.entries(w.intros||{}).forEach(([name,it])=>{
-    const times = Object.values(it.checks||{}).map(c=>c.at).filter(Boolean);
-    if(times.length){ times.sort((a,b)=>b.localeCompare(a)); recent.push({ name, emoji:it.emoji, at:times[0], week:w.n, introduced:it.introduced }); }
+    const fedTimes = Object.values(it.dow||{}).filter(d=>d&&d.on).map(d=>d.fedISO||d.at).filter(Boolean);
+    if(!fedTimes.length) return;
+    const info = itemByName(name) || {};
+    const last = fedTimes.sort((a,b)=>b.localeCompare(a))[0];
+    const cur = recentMap[name];
+    if(!cur){ recentMap[name] = { name, emoji: it.emoji||info.emoji||"🍽️", isAllergen: it.isAllergen, group: info.group, lastFed: last, count: timesEaten(name) }; }
+    else if(last > cur.lastFed){ cur.lastFed = last; }
   }));
-  recent.sort((a,b)=>(b.at||"").localeCompare(a.at||""));
+  const recent = Object.values(recentMap).sort((a,b)=>(b.lastFed||"").localeCompare(a.lastFed||""));
 
   let html = `<div class="card hero">
     <div class="hero-img">${recent[0]?recent[0].emoji:"🥣"}</div>
@@ -565,7 +570,7 @@ function renderHome(){
       <h1>First Bites</h1>
       <p class="sub">Grips and grasps and maybe a taste too. It's all about exploring.</p>
       <div class="prog"><i style="width:${pct}%"></i></div>
-      <div class="muted">${introduced.length} food${introduced.length!==1?'s':''} introduced · ${started.length} started · ${S.weeks.length} week${S.weeks.length!==1?'s':''} planned</div>
+      <div class="muted">${started.length} food${started.length!==1?'s':''} started · ${S.weeks.length} week${S.weeks.length!==1?'s':''} planned</div>
     </div>
   </div>`;
 
@@ -575,16 +580,25 @@ function renderHome(){
     <button class="btn sec small" data-go="foods">🥑 Browse foods</button>
   </div>`;
 
-  // most recent meals
+  // most recent meals — up to 5 foods, last-fed date, as embedded tiles
   html += `<div class="card"><h2>Most recent meals</h2>`;
   if(!recent.length){
-    html += `<p class="muted">Nothing logged yet. Head to <b>Plan</b>, add a food to this week, and check off the first taste — it'll show up here with a timestamp.</p>`;
+    html += `<p class="muted">Nothing logged yet. Head to <b>Plan</b>, add a food to a week, and tap the day you fed it — it'll show up here.</p>`;
   } else {
-    recent.slice(0,6).forEach(r=>{
-      html += `<div class="listrow"><div class="thumb">${r.emoji}</div>
-        <div class="check-main"><div class="check-title">${esc(r.name)} ${r.introduced?'<span class="pill safe">Introduced ✓</span>':''}</div>
-          <div class="check-meta">Week ${r.week} · ${fmtStamp(r.at)}</div></div></div>`;
+    html += `<div class="tiles">`;
+    recent.slice(0,5).forEach(r=>{
+      html += `<div class="tile" data-prep="${esc(r.name)}">
+        <div class="tile-img">${r.emoji}
+          <div class="tile-badges"><span class="tile-badge ${r.isAllergen?'allergen':''}">${r.isAllergen?'⚠ allergen':esc(r.group||'food')}</span></div>
+        </div>
+        <div class="tile-body">
+          <div class="tile-name">${esc(titleCase(r.name))}</div>
+          <div class="tile-group">Last fed ${fmtStamp(r.lastFed)}</div>
+          <div class="tile-group" style="color:var(--green-d);font-weight:700">🍽️ ${r.count} day${r.count!==1?'s':''} total</div>
+        </div>
+      </div>`;
     });
+    html += `</div>`;
   }
   html += `</div>`;
 
@@ -595,7 +609,10 @@ function renderHome(){
   </div>`;
 
   main.innerHTML = html;
-  main.onclick = (e)=>{ const t=e.target.closest("[data-go]"); if(t){ currentTab=t.dataset.go; setActiveTab(); render(); } };
+  main.onclick = (e)=>{
+    const g=e.target.closest("[data-go]"); if(g){ currentTab=g.dataset.go; setActiveTab(); render(); return; }
+    const tile=e.target.closest("[data-prep]"); if(tile){ showPrep(tile.dataset.prep); }
+  };
 }
 
 /* ---------- PLAN (weekly calendar) ---------- */
